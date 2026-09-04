@@ -4,14 +4,20 @@ import { Instance, Instances, RoundedBox } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import {
+  AdditiveBlending,
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
   DataTexture,
+  DoubleSide,
   Group,
   LinearFilter,
   MathUtils,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  PlaneGeometry,
   RedFormat,
+  RGBAFormat,
   RepeatWrapping,
   SRGBColorSpace,
   UnsignedByteType,
@@ -19,7 +25,7 @@ import {
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { keyboardKeys } from "./keyboardLayout";
 import { useConfiguratorStore } from "@/stores/configurator";
-import { requestSceneFrames, smoothstep, storyProgress } from "@/lib/storyProgress";
+import { getStoryLightingIntensity, requestSceneFrames, smoothstep, storyProgress } from "@/lib/storyProgress";
 import type { CaseFinish, KeycapVariant } from "@/types/product";
 
 const caseFinishes = {
@@ -30,7 +36,8 @@ const caseFinishes = {
 const keyColors = { obsidian: "#27292a", porcelain: "#ddd9cf", ember: "#773a34" } as const;
 const accentColors = { obsidian: "#8b8173", porcelain: "#9c6549", ember: "#bd7951" } as const;
 const legendColors = { obsidian: "#d8d4ca", porcelain: "#393a39", ember: "#f0d9cc" } as const;
-const lightColors = { neutral: "#f4f0df", warm: "#ffbd7a", ice: "#a9dbff" } as const;
+const lightColors = { neutral: "#efdca2", warm: "#ff9a52", ice: "#66bdff" } as const;
+const lightColorsOnLight = { neutral: "#c9b98f", warm: "#df8845", ice: "#5fa8d8" } as const;
 const switchColors = { linear: "#a65f53", tactile: "#c6a45d", silent: "#678580" } as const;
 const rowLift = [0.09, 0.07, 0.035, 0, -0.012, 0.025];
 const rowTilt = [-0.105, -0.075, -0.035, 0, 0.035, 0.07];
@@ -85,6 +92,63 @@ const upperSwitchGeometry = new RoundedBoxGeometry(0.32, 0.12, 0.32, 2, 0.035);
 const stemHorizontalGeometry = new RoundedBoxGeometry(0.25, 0.12, 0.1, 2, 0.025);
 const stemVerticalGeometry = new RoundedBoxGeometry(0.1, 0.12, 0.25, 2, 0.025);
 const keycapGeometry = createKeycapGeometry();
+const ledGeometry = new RoundedBoxGeometry(0.14, 0.035, 0.12, 2, 0.014);
+const ledGlowGeometry = new PlaneGeometry(0.5, 0.2);
+const ledGapGlowGeometry = new PlaneGeometry(0.54, 0.22);
+const ledSpillGeometry = new PlaneGeometry(0.64, 0.56);
+
+function createGlowMap(size: number, exponent: number) {
+  const data = new Uint8Array(size * size * 4);
+  const center = (size - 1) / 2;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const dx = (x - center) / center;
+      const dy = (y - center) / center;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const falloff = MathUtils.clamp(1 - distance, 0, 1);
+      const value = Math.round(falloff ** exponent * 255);
+      const offset = (y * size + x) * 4;
+      data[offset] = value;
+      data[offset + 1] = value;
+      data[offset + 2] = value;
+      data[offset + 3] = value;
+    }
+  }
+  const texture = new DataTexture(data, size, size, RGBAFormat, UnsignedByteType);
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+const ledGlowMap = createGlowMap(48, 1.55);
+const ledSpillMap = createGlowMap(48, 1.08);
+
+function createGapGlowMap(size: number) {
+  const data = new Uint8Array(size * size * 4);
+  const center = (size - 1) / 2;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const xFalloff = MathUtils.clamp(1 - Math.abs((x - center) / center), 0, 1);
+      const yFalloff = MathUtils.clamp(1 - Math.abs((y - center) / center), 0, 1);
+      const value = Math.round(xFalloff ** 1.4 * (0.68 + yFalloff * 0.32) * 255);
+      const offset = (y * size + x) * 4;
+      data[offset] = value;
+      data[offset + 1] = value;
+      data[offset + 2] = value;
+      data[offset + 3] = value;
+    }
+  }
+  const texture = new DataTexture(data, size, size, RGBAFormat, UnsignedByteType);
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+const ledGapGlowMap = createGapGlowMap(48);
 
 let legendResources: { geometry: BufferGeometry; texture: CanvasTexture } | null = null;
 
@@ -300,16 +364,47 @@ function TopCase({ groupRef, dark }: { groupRef: React.RefObject<Group | null>; 
   );
 }
 
-function SwitchLayer({ groupRef }: { groupRef: React.RefObject<Group | null> }) {
+function SwitchHousingMaterial({ dark, variant }: { dark: boolean; variant: ModelVariant }) {
+  const backlight = useConfiguratorStore((state) => state.backlight);
+  const preset = useConfiguratorStore((state) => state.backlightPreset);
+  const material = useRef<MeshStandardMaterial>(null);
+  const emissive = (dark ? lightColors : lightColorsOnLight)[preset];
+  const storyIntensity = variant === "story" ? getStoryLightingIntensity(storyProgress.current) : 1;
+  const initialIntensity = backlight ? storyIntensity : 0;
+  const emissiveScale = dark ? 0.62 : 0.34;
+
+  useFrame(() => {
+    if (!material.current) return;
+    const intensity = backlight
+      ? (variant === "story" ? getStoryLightingIntensity(storyProgress.current) : 1)
+      : 0;
+    material.current.emissiveIntensity = emissiveScale * intensity;
+  });
+
+  return (
+    <meshStandardMaterial
+      ref={material}
+      color="#d5d7d3"
+      emissive={emissive}
+      emissiveIntensity={emissiveScale * initialIntensity}
+      roughness={0.38}
+      transparent
+      opacity={0.86}
+      envMapIntensity={1.05}
+    />
+  );
+}
+
+function SwitchLayer({ groupRef, dark, variant }: { groupRef: React.RefObject<Group | null>; dark: boolean; variant: ModelVariant }) {
   const switchType = useConfiguratorStore((state) => state.switchType);
   return (
     <group ref={groupRef} position={[0, 0.47, 0]}>
       <Instances limit={keyboardKeys.length} geometry={lowerSwitchGeometry} castShadow>
-        <meshStandardMaterial color={switchColors[switchType]} roughness={0.46} transparent opacity={0.94} />
+        <meshStandardMaterial color={switchColors[switchType]} roughness={0.46} />
         {keyboardKeys.map((key) => <Instance key={`${key.label}-${key.x}`} position={[key.x, -0.035, key.z]} />)}
       </Instances>
       <Instances limit={keyboardKeys.length} geometry={upperSwitchGeometry} castShadow>
-        <meshStandardMaterial color="#d8d4ca" roughness={0.32} transparent opacity={0.76} envMapIntensity={1.1} />
+        <SwitchHousingMaterial dark={dark} variant={variant} />
         {keyboardKeys.map((key) => <Instance key={`${key.label}-${key.x}`} position={[key.x, 0.095, key.z]} />)}
       </Instances>
       {[stemHorizontalGeometry, stemVerticalGeometry].map((geometry, layer) => (
@@ -318,6 +413,7 @@ function SwitchLayer({ groupRef }: { groupRef: React.RefObject<Group | null> }) 
           {keyboardKeys.map((key) => <Instance key={`${key.label}-${key.x}`} position={[key.x, 0.205, key.z]} />)}
         </Instances>
       ))}
+      <RgbLighting dark={dark} variant={variant} />
     </group>
   );
 }
@@ -334,8 +430,6 @@ function LegendLayer({ keycaps }: { keycaps: KeycapVariant }) {
 
 function KeycapLayer({ groupRef }: { groupRef: React.RefObject<Group | null> }) {
   const keycaps = useConfiguratorStore((state) => state.keycaps);
-  const backlight = useConfiguratorStore((state) => state.backlight);
-  const preset = useConfiguratorStore((state) => state.backlightPreset);
   return (
     <group ref={groupRef} position={[0, 0.73, 0]}>
       <Instances limit={keyboardKeys.length} geometry={keycapGeometry} castShadow receiveShadow>
@@ -343,8 +437,6 @@ function KeycapLayer({ groupRef }: { groupRef: React.RefObject<Group | null> }) 
           roughness={0.76}
           roughnessMap={pbtRoughness}
           metalness={0.01}
-          emissive={backlight ? lightColors[preset] : "#000000"}
-          emissiveIntensity={backlight ? 0.055 : 0}
           envMapIntensity={0.62}
         />
         {keyboardKeys.map((key) => (
@@ -362,8 +454,118 @@ function KeycapLayer({ groupRef }: { groupRef: React.RefObject<Group | null> }) 
   );
 }
 
-function dampLayer(group: Group | null, base: number, distance: number, exploded: number, motionFactor: number, delta: number) {
-  if (group) group.position.y = MathUtils.damp(group.position.y, base + distance * exploded * motionFactor, 6, delta);
+function RgbLighting({ dark, variant }: { dark: boolean; variant: ModelVariant }) {
+  const backlight = useConfiguratorStore((state) => state.backlight);
+  const preset = useConfiguratorStore((state) => state.backlightPreset);
+  const root = useRef<Group>(null);
+  const sourceMaterial = useRef<MeshBasicMaterial>(null);
+  const glowMaterial = useRef<MeshBasicMaterial>(null);
+  const gapGlowMaterial = useRef<MeshBasicMaterial>(null);
+  const spillMaterial = useRef<MeshBasicMaterial>(null);
+  const color = (dark ? lightColors : lightColorsOnLight)[preset];
+  const storyIntensity = variant === "story" ? getStoryLightingIntensity(storyProgress.current) : 1;
+  const initialIntensity = backlight ? storyIntensity : 0;
+  const sourceOpacity = dark ? 0.9 : 0.72;
+  const glowOpacity = dark ? 0.45 : 0.22;
+  const gapGlowOpacity = dark ? 0.26 : 0.13;
+  const spillOpacity = dark ? 0.25 : 0.1;
+
+  useFrame(() => {
+    const intensity = backlight
+      ? (variant === "story" ? getStoryLightingIntensity(storyProgress.current) : 1)
+      : 0;
+    if (root.current) root.current.visible = intensity > 0.001;
+    if (sourceMaterial.current) sourceMaterial.current.opacity = sourceOpacity * intensity;
+    if (glowMaterial.current) glowMaterial.current.opacity = glowOpacity * intensity;
+    if (gapGlowMaterial.current) gapGlowMaterial.current.opacity = gapGlowOpacity * intensity;
+    if (spillMaterial.current) spillMaterial.current.opacity = spillOpacity * intensity;
+  });
+
+  return (
+    <group ref={root} visible={initialIntensity > 0.001}>
+      <Instances limit={keyboardKeys.length} geometry={ledGlowGeometry}>
+        <meshBasicMaterial
+          ref={glowMaterial}
+          color={color}
+          alphaMap={ledGlowMap}
+          transparent
+          opacity={glowOpacity * initialIntensity}
+          depthTest
+          depthWrite={false}
+          blending={AdditiveBlending}
+          toneMapped={false}
+          side={DoubleSide}
+        />
+        {keyboardKeys.map((key) => (
+          <Instance
+            key={`glow-${key.label}-${key.x}`}
+            position={[key.x, -0.015, key.z + 0.32]}
+          />
+        ))}
+      </Instances>
+      <Instances limit={keyboardKeys.length} geometry={ledGeometry}>
+        <meshBasicMaterial
+          ref={sourceMaterial}
+          color={color}
+          transparent
+          opacity={sourceOpacity * initialIntensity}
+          depthTest
+          depthWrite={false}
+          blending={AdditiveBlending}
+          toneMapped={false}
+        />
+        {keyboardKeys.map((key) => (
+          <Instance key={`led-${key.label}-${key.x}`} position={[key.x, 0.05, key.z + 0.32]} />
+        ))}
+      </Instances>
+      <Instances limit={keyboardKeys.length} geometry={ledGapGlowGeometry}>
+        <meshBasicMaterial
+          ref={gapGlowMaterial}
+          color={color}
+          alphaMap={ledGapGlowMap}
+          transparent
+          opacity={gapGlowOpacity * initialIntensity}
+          depthTest
+          depthWrite={false}
+          blending={AdditiveBlending}
+          toneMapped={false}
+          side={DoubleSide}
+        />
+        {keyboardKeys.map((key) => (
+          <Instance
+            key={`gap-glow-${key.label}-${key.x}`}
+            position={[key.x, 0.16, key.z + 0.32]}
+            rotation={[-Math.PI / 2, 0, 0]}
+          />
+        ))}
+      </Instances>
+      <Instances limit={keyboardKeys.length} geometry={ledSpillGeometry}>
+        <meshBasicMaterial
+          ref={spillMaterial}
+          color={color}
+          alphaMap={ledSpillMap}
+          transparent
+          opacity={spillOpacity * initialIntensity}
+          depthTest
+          depthWrite={false}
+          blending={AdditiveBlending}
+          toneMapped={false}
+          side={DoubleSide}
+        />
+        {keyboardKeys.map((key) => (
+          <Instance
+            key={`spill-${key.label}-${key.x}`}
+            position={[key.x, -0.17, key.z + 0.08]}
+            rotation={[-Math.PI / 2, 0, 0]}
+          />
+        ))}
+      </Instances>
+    </group>
+  );
+}
+
+function positionLayer(group: Group | null, base: number, distance: number, exploded: number, motionFactor: number) {
+  if (group) group.position.y = base + distance * exploded * motionFactor;
 }
 
 export function KeyboardModel({ variant, dark, mobile }: { variant: ModelVariant; dark: boolean; mobile: boolean }) {
@@ -398,7 +600,7 @@ export function KeyboardModel({ variant, dark, mobile }: { variant: ModelVariant
     };
   }, [variant]);
 
-  useFrame((_, delta) => {
+  useFrame(() => {
     if (!root.current) return;
     if (variant === "configurator") return;
 
@@ -413,16 +615,16 @@ export function KeyboardModel({ variant, dark, mobile }: { variant: ModelVariant
     if (pcb.current) pcb.current.visible = internalsVisible;
     if (dampening.current) dampening.current.visible = internalsVisible;
     if (plate.current) plate.current.visible = internalsVisible;
-    if (switches.current) switches.current.visible = internalsVisible;
+    if (switches.current) switches.current.visible = switchStage < 0.35;
 
-    dampLayer(bottom.current, -0.36, -0.62, exploded, motionFactor.current, delta);
-    dampLayer(battery.current, -0.2, 0.22, exploded, motionFactor.current, delta);
-    dampLayer(pcb.current, -0.08, 0.72, exploded, motionFactor.current, delta);
-    dampLayer(dampening.current, 0.04, 1.15, exploded, motionFactor.current, delta);
-    dampLayer(plate.current, 0.16, 1.62, exploded, motionFactor.current, delta);
-    dampLayer(topCase.current, 0.25, 1.88, exploded, motionFactor.current, delta);
-    dampLayer(switches.current, 0.47, 2.35, exploded, motionFactor.current, delta);
-    dampLayer(keycaps.current, 0.73, 2.98, exploded, motionFactor.current, delta);
+    positionLayer(bottom.current, -0.36, -0.62, exploded, motionFactor.current);
+    positionLayer(battery.current, -0.2, 0.22, exploded, motionFactor.current);
+    positionLayer(pcb.current, -0.08, 0.72, exploded, motionFactor.current);
+    positionLayer(dampening.current, 0.04, 1.15, exploded, motionFactor.current);
+    positionLayer(plate.current, 0.16, 1.62, exploded, motionFactor.current);
+    positionLayer(topCase.current, 0.25, 1.88, exploded, motionFactor.current);
+    positionLayer(switches.current, 0.47, 2.35, exploded, motionFactor.current);
+    positionLayer(keycaps.current, 0.73, 2.98, exploded, motionFactor.current);
 
     const designTurn = smoothstep(0.1, 0.26, progress);
     const highAngle = smoothstep(0.28, 0.55, progress);
@@ -434,11 +636,11 @@ export function KeyboardModel({ variant, dark, mobile }: { variant: ModelVariant
     const switchX = mobile ? -2.8 : -4.7;
     const baseY = mobile ? -1.48 : -0.62;
     const baseScale = mobile ? 0.49 : 0.64;
-    root.current.rotation.x = MathUtils.damp(root.current.rotation.x, targetX, 4.5, delta);
-    root.current.rotation.y = MathUtils.damp(root.current.rotation.y, targetY, 4.5, delta);
-    root.current.position.x = MathUtils.damp(root.current.position.x, MathUtils.lerp(composedX, switchX, switchStage), 5, delta);
-    root.current.position.y = MathUtils.damp(root.current.position.y, baseY - exploded * 0.72, 5, delta);
-    root.current.scale.setScalar(MathUtils.damp(root.current.scale.x, baseScale * (1 - switchStage * 0.86), 5, delta));
+    root.current.rotation.x = targetX;
+    root.current.rotation.y = targetY;
+    root.current.position.x = MathUtils.lerp(composedX, switchX, switchStage);
+    root.current.position.y = baseY - exploded * 0.72;
+    root.current.scale.setScalar(baseScale * (1 - switchStage * 0.86));
   });
 
   return (
@@ -455,7 +657,7 @@ export function KeyboardModel({ variant, dark, mobile }: { variant: ModelVariant
       {variant === "story" && <Dampening groupRef={dampening} />}
       <Plate groupRef={plate} />
       <TopCase groupRef={topCase} dark={dark} />
-      {variant === "story" && <SwitchLayer groupRef={switches} />}
+      <SwitchLayer groupRef={switches} dark={dark} variant={variant} />
       <KeycapLayer groupRef={keycaps} />
     </group>
   );

@@ -21,7 +21,7 @@ export function SwitchModel({ mobile }: { mobile: boolean }) {
     if (!root.current || !stem.current) return;
     const progress = storyProgress.current;
     const visible = smoothstep(0.68, 0.76, progress) * (1 - smoothstep(0.91, 0.98, progress));
-    root.current.scale.setScalar(MathUtils.damp(root.current.scale.x, 1.65 * visible, 6, delta));
+    root.current.scale.setScalar(1.65 * visible);
     root.current.rotation.y = -0.28 + Math.sin(clock.elapsedTime * 0.32) * 0.055;
     root.current.visible = visible > 0.01;
     stem.current.position.y = MathUtils.damp(stem.current.position.y, pressed ? 0.13 : 0.48, 13, delta);
@@ -34,7 +34,7 @@ export function SwitchModel({ mobile }: { mobile: boolean }) {
       rotation={[-0.14, -0.28, 0]}
       onPointerDown={(event) => {
         event.stopPropagation();
-        playSwitchClick();
+        playSwitchClick(switchType);
         setPressed(true);
         requestSceneFrames("story", 420);
       }}

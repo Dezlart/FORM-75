@@ -7,11 +7,12 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useTheme } from "next-themes";
 import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { ACESFilmicToneMapping, MathUtils, Mesh, ShadowMaterial, SpotLight, SRGBColorSpace, Vector3 } from "three";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { KeyboardModel } from "./KeyboardModel";
 import { KeyboardFallback } from "./KeyboardFallback";
 import { SwitchModel } from "./SwitchModel";
 import { useLocale } from "@/components/providers/LocaleProvider";
-import { registerSceneInvalidator, requestSceneFrames, storyProgress, smoothstep } from "@/lib/storyProgress";
+import { registerSceneInvalidator, requestSceneFrames, storyProgress, storyTargetProgress, smoothstep } from "@/lib/storyProgress";
 
 type CanvasVariant = "story" | "configurator";
 type WebGLState = "checking" | "available" | "unavailable";
@@ -66,7 +67,7 @@ function StoryCamera({ mobile }: { mobile: boolean }) {
   const target = useRef(new Vector3());
   const heroPosition = useRef(new Vector3());
   const wantedPosition = useRef(new Vector3());
-  useFrame((_, delta) => {
+  useFrame(() => {
     const progress = storyProgress.current;
     const design = smoothstep(0.08, 0.26, progress);
     const exploded = smoothstep(0.27, 0.58, progress);
@@ -79,16 +80,143 @@ function StoryCamera({ mobile }: { mobile: boolean }) {
       mobile ? 7.8 - design * 0.55 + exploded * 3.2 - switchStage * 2.2 : 6.3 - design * 0.7 + exploded * 3.8 - switchStage * 2.8,
       mobile ? 13.5 - design * 0.5 + exploded * 0.7 - switchStage * 2.3 : 11 - design * 0.5 + exploded - switchStage * 2.2,
     ).lerp(heroPosition.current, returnHome);
-    const wanted = wantedPosition.current;
-    camera.position.x = MathUtils.damp(camera.position.x, wanted.x, 4, delta);
-    camera.position.y = MathUtils.damp(camera.position.y, wanted.y, 4, delta);
-    camera.position.z = MathUtils.damp(camera.position.z, wanted.z, 4, delta);
+    camera.position.copy(wantedPosition.current);
     const stagedTargetX = (mobile ? 0.1 : 4.25) * (1 - switchStage);
     const stagedTargetY = mobile ? 1 + exploded * 0.62 - switchStage * 2.8 : -0.42 + exploded * 0.62 + switchStage * 0.55;
     target.current.set(MathUtils.lerp(stagedTargetX, mobile ? 0.1 : 4.25, returnHome), MathUtils.lerp(stagedTargetY, mobile ? 1 : -0.42, returnHome), 0);
     camera.lookAt(target.current);
   });
   return null;
+}
+
+function StoryProgressController() {
+  const { gl, invalidate } = useThree();
+  const reducedMotion = useRef(false);
+  const settling = useRef(false);
+
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => {
+      reducedMotion.current = query.matches;
+      settling.current = false;
+      if (query.matches) storyProgress.current = storyTargetProgress.current;
+      invalidate();
+    };
+    update();
+    const legacyQuery = query as MediaQueryList & {
+      addListener?: (listener: (event: MediaQueryListEvent) => void) => void;
+      removeListener?: (listener: (event: MediaQueryListEvent) => void) => void;
+    };
+    if (typeof query.addEventListener === "function") query.addEventListener("change", update);
+    else legacyQuery.addListener?.(update);
+    return () => {
+      if (typeof query.removeEventListener === "function") query.removeEventListener("change", update);
+      else legacyQuery.removeListener?.(update);
+    };
+  }, [invalidate]);
+
+  useFrame((_, delta) => {
+    const target = storyTargetProgress.current;
+    const shell = gl.domElement.closest<HTMLElement>(".canvas-story");
+    if (shell) shell.dataset.storyFrame = String(gl.info.render.frame);
+    if (reducedMotion.current) {
+      storyProgress.current = target;
+      if (shell) {
+        shell.dataset.storyTarget = target.toFixed(5);
+        shell.dataset.storyProgress = target.toFixed(5);
+        shell.dataset.storyRendering = "settled";
+      }
+      return;
+    }
+
+    const distance = Math.abs(target - storyProgress.current);
+    const frameDelta = settling.current ? Math.min(delta, 1 / 30) : Math.min(delta, 1 / 60);
+    const next = MathUtils.damp(storyProgress.current, target, 10.5, frameDelta);
+    if (Math.abs(target - next) < 0.00008) {
+      storyProgress.current = target;
+      settling.current = false;
+      if (shell) {
+        shell.dataset.storyTarget = target.toFixed(5);
+        shell.dataset.storyProgress = target.toFixed(5);
+        shell.dataset.storyRendering = "settled";
+      }
+      return;
+    }
+    settling.current = distance > 0.00008;
+    storyProgress.current = next;
+    if (shell) {
+      shell.dataset.storyTarget = target.toFixed(5);
+      shell.dataset.storyProgress = next.toFixed(5);
+      shell.dataset.storyRendering = "active";
+    }
+    invalidate();
+  }, -100);
+  return null;
+}
+
+function ConfiguratorControls({ mobile }: { mobile: boolean }) {
+  const controls = useRef<OrbitControlsImpl>(null);
+  const { gl } = useThree();
+  const previousAzimuth = useRef<number | null>(null);
+  const accumulatedRotation = useRef(0);
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const controlSurface = controls.current?.domElement ?? canvas;
+    const canvasTouchAction = canvas.style.touchAction;
+    const controlTouchAction = controlSurface.style.touchAction;
+    const touchAction = mobile ? "pan-y" : "none";
+    canvas.style.touchAction = touchAction;
+    controlSurface.style.touchAction = touchAction;
+    return () => {
+      canvas.style.touchAction = canvasTouchAction;
+      controlSurface.style.touchAction = controlTouchAction;
+    };
+  }, [gl, mobile]);
+
+  const recordRotation = () => {
+    const instance = controls.current;
+    if (!instance) return;
+    const azimuth = instance.getAzimuthalAngle();
+    const previous = previousAzimuth.current;
+    if (previous !== null) {
+      let delta = azimuth - previous;
+      if (delta > Math.PI) delta -= Math.PI * 2;
+      else if (delta < -Math.PI) delta += Math.PI * 2;
+      accumulatedRotation.current += delta;
+    }
+    previousAzimuth.current = azimuth;
+    const shell = gl.domElement.closest<HTMLElement>(".canvas-configurator");
+    if (shell) {
+      shell.dataset.configAzimuth = azimuth.toFixed(4);
+      shell.dataset.configRotation = accumulatedRotation.current.toFixed(4);
+    }
+  };
+
+  return (
+    <OrbitControls
+      ref={controls}
+      enablePan={false}
+      enableZoom={false}
+      minPolarAngle={0.75}
+      maxPolarAngle={1.45}
+      minAzimuthAngle={Number.NEGATIVE_INFINITY}
+      maxAzimuthAngle={Number.POSITIVE_INFINITY}
+      target={[0, -0.2, 0]}
+      rotateSpeed={0.68}
+      dampingFactor={0.08}
+      enableDamping
+      onChange={recordRotation}
+      onStart={() => {
+        recordRotation();
+        requestSceneFrames("configurator", 1200);
+      }}
+      onEnd={() => {
+        recordRotation();
+        requestSceneFrames("configurator", 650);
+      }}
+    />
+  );
 }
 
 function ToneMapping({ dark }: { dark: boolean }) {
@@ -206,7 +334,7 @@ function RenderScheduler({ active, variant }: { active: boolean; variant: Canvas
       animationFrame = time < renderUntil ? window.requestAnimationFrame(render) : 0;
     };
     const requestFrames = (duration = 480) => {
-      if (reduced) {
+      if (reduced || duration <= 0) {
         invalidate();
         return;
       }
@@ -268,27 +396,14 @@ function Scene({ variant, dark, active, mobile }: { variant: CanvasVariant; dark
       <color attach="background" args={[dark ? "#181a1c" : "#f3f4f2"]} />
       <fog attach="fog" args={[dark ? "#181a1c" : "#f3f4f2", 21, 34]} />
       <ToneMapping dark={dark} />
+      {variant === "story" && <StoryProgressController />}
       {process.env.NODE_ENV !== "production" && <PerformanceProbe />}
       <AdaptiveQuality mobile={mobile} />
       <RenderScheduler active={active} variant={variant} />
       <StudioLighting dark={dark} story={variant === "story"} active={active} mobile={mobile} />
       <KeyboardModel variant={variant} dark={dark} mobile={mobile} />
       {variant === "story" && <><SwitchModel mobile={mobile} /><StoryCamera mobile={mobile} /></>}
-      {variant === "configurator" && (
-        <OrbitControls
-          enablePan={false}
-          enableZoom={false}
-          minPolarAngle={0.75}
-          maxPolarAngle={1.45}
-          minAzimuthAngle={-0.8}
-          maxAzimuthAngle={0.9}
-          target={[0, -0.2, 0]}
-          dampingFactor={0.08}
-          enableDamping
-          onStart={() => requestSceneFrames("configurator", 1200)}
-          onEnd={() => requestSceneFrames("configurator", 650)}
-        />
-      )}
+      {variant === "configurator" && <ConfiguratorControls mobile={mobile} />}
       {active && <ShadowFloor dark={dark} story={variant === "story"} />}
     </>
   );

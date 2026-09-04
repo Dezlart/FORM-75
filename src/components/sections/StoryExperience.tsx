@@ -6,7 +6,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useEffect, useRef, useState } from "react";
 import { KeyboardCanvas } from "@/components/three/KeyboardCanvas";
 import { useLocale } from "@/components/providers/LocaleProvider";
-import { requestSceneFrames, storyProgress } from "@/lib/storyProgress";
+import { requestSceneFrames, storyTargetProgress } from "@/lib/storyProgress";
 import { playSwitchClick, preloadSwitchClick } from "@/lib/switchSound";
 import { useConfiguratorStore } from "@/stores/configurator";
 import type { SwitchVariant } from "@/types/product";
@@ -26,16 +26,14 @@ export function StoryExperience() {
   }, []);
 
   useGSAP(() => {
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const trigger = ScrollTrigger.create({
       trigger: root.current,
       start: "top top",
       end: "bottom bottom",
-      scrub: reduced ? false : 0.45,
       invalidateOnRefresh: true,
       onUpdate: (self) => {
-        storyProgress.current = self.progress;
-        requestSceneFrames("story", reduced ? 0 : 520);
+        storyTargetProgress.current = self.progress;
+        requestSceneFrames("story", 0);
         const nextStage = Math.min(5, Math.round(self.progress * 5));
         setActiveStage((current) => current === nextStage ? current : nextStage);
       },
@@ -117,10 +115,24 @@ export function StoryExperience() {
               type="button"
               onPointerEnter={preloadSwitchClick}
               onFocus={preloadSwitchClick}
-              onPointerDown={() => { playSwitchClick(); setPressed(true); requestSceneFrames("story", 420); }}
+              onPointerDown={() => { playSwitchClick(switchType); setPressed(true); requestSceneFrames("story", 420); }}
               onPointerUp={() => { setPressed(false); requestSceneFrames("story", 320); }}
               onPointerLeave={() => { setPressed(false); requestSceneFrames("story", 320); }}
               onPointerCancel={() => { setPressed(false); requestSceneFrames("story", 320); }}
+              onKeyDown={(event) => {
+                if ((event.key === "Enter" || event.key === " ") && !event.repeat) {
+                  playSwitchClick(switchType);
+                  setPressed(true);
+                  requestSceneFrames("story", 420);
+                }
+              }}
+              onKeyUp={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  setPressed(false);
+                  requestSceneFrames("story", 320);
+                }
+              }}
+              onBlur={() => { setPressed(false); requestSceneFrames("story", 320); }}
             >
               <i />{t.story.press}
             </button>

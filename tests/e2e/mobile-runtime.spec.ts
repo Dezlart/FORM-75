@@ -56,7 +56,7 @@ test("disabled Safari storage does not disable controls", async ({ page }, testI
   expectCleanRuntime(diagnostics);
 });
 
-test("mobile starts at the top with the intended defaults, switch layout and local click audio", async ({ page }, testInfo) => {
+test("mobile starts at the top with the intended defaults, switch layout and local switch audio", async ({ page, request }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-safari", "The complete mobile product-state check runs in iPhone WebKit.");
   const diagnostics = monitorRuntime(page);
   await page.goto("/");
@@ -81,11 +81,15 @@ test("mobile starts at the top with the intended defaults, switch layout and loc
   expect(copyBox!.y).toBeGreaterThanOrEqual(viewport!.height * 0.48);
   expect(copyBox!.y + copyBox!.height).toBeLessThanOrEqual(viewport!.height + 1);
 
-  const audioWasPreloaded = await page.evaluate(() => performance.getEntriesByType("resource").some((entry) => entry.name.endsWith("/audio/keyboard-click.mp3")));
-  const audioResponse = audioWasPreloaded ? null : page.waitForResponse((response) => response.url().endsWith("/audio/keyboard-click.mp3"));
+  const audioAssets = ["/audio/switch-linear.mp3", "/audio/switch-tactile.mp3", "/audio/switch-silent.mp3"];
+  for (const asset of audioAssets) {
+    const response = await request.get(asset);
+    expect(response.ok()).toBe(true);
+    expect(response.headers()["content-type"]).toContain("audio/mpeg");
+    expect((await response.body()).length).toBeGreaterThan(1_000);
+  }
+
   await page.getByRole("button", { name: "Нажать переключатель" }).click();
-  if (audioResponse) expect((await audioResponse).ok()).toBe(true);
-  else expect(audioWasPreloaded).toBe(true);
 
   expectCleanRuntime(diagnostics);
 });
