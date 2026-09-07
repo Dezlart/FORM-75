@@ -12,7 +12,7 @@ import { KeyboardModel } from "./KeyboardModel";
 import { KeyboardFallback } from "./KeyboardFallback";
 import { SwitchModel } from "./SwitchModel";
 import { useLocale } from "@/components/providers/LocaleProvider";
-import { registerSceneInvalidator, requestSceneFrames, storyProgress, storyTargetProgress, smoothstep } from "@/lib/storyProgress";
+import { advanceStoryMotion, isSceneDebugEnabled, registerSceneInvalidator, requestSceneFrames, storyProgress, storyTargetProgress, smoothstep } from "@/lib/storyProgress";
 
 type CanvasVariant = "story" | "configurator";
 type WebGLState = "checking" | "available" | "unavailable";
@@ -85,21 +85,26 @@ function StoryCamera({ mobile }: { mobile: boolean }) {
     const stagedTargetY = mobile ? 1 + exploded * 0.62 - switchStage * 2.8 : -0.42 + exploded * 0.62 + switchStage * 0.55;
     target.current.set(MathUtils.lerp(stagedTargetX, mobile ? 0.1 : 4.25, returnHome), MathUtils.lerp(stagedTargetY, mobile ? 1 : -0.42, returnHome), 0);
     camera.lookAt(target.current);
-  });
+    camera.updateMatrixWorld();
+  }, -90);
   return null;
 }
 
 function StoryProgressController() {
   const { gl, invalidate } = useThree();
+  const debug = useRef(isSceneDebugEnabled());
   const reducedMotion = useRef(false);
   const settling = useRef(false);
+  const motion = useRef({ progress: storyProgress.current, velocity: 0 });
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => {
       reducedMotion.current = query.matches;
       settling.current = false;
+      motion.current.velocity = 0;
       if (query.matches) storyProgress.current = storyTargetProgress.current;
+      motion.current.progress = storyProgress.current;
       invalidate();
     };
     update();
@@ -117,10 +122,12 @@ function StoryProgressController() {
 
   useFrame((_, delta) => {
     const target = storyTargetProgress.current;
-    const shell = gl.domElement.closest<HTMLElement>(".canvas-story");
+    const shell = debug.current ? gl.domElement.closest<HTMLElement>(".canvas-story") : null;
     if (shell) shell.dataset.storyFrame = String(gl.info.render.frame);
     if (reducedMotion.current) {
       storyProgress.current = target;
+      motion.current.progress = target;
+      motion.current.velocity = 0;
       if (shell) {
         shell.dataset.storyTarget = target.toFixed(5);
         shell.dataset.storyProgress = target.toFixed(5);
@@ -129,27 +136,17 @@ function StoryProgressController() {
       return;
     }
 
-    const distance = Math.abs(target - storyProgress.current);
-    const frameDelta = settling.current ? Math.min(delta, 1 / 30) : Math.min(delta, 1 / 60);
-    const next = MathUtils.damp(storyProgress.current, target, 10.5, frameDelta);
-    if (Math.abs(target - next) < 0.00008) {
-      storyProgress.current = target;
-      settling.current = false;
-      if (shell) {
-        shell.dataset.storyTarget = target.toFixed(5);
-        shell.dataset.storyProgress = target.toFixed(5);
-        shell.dataset.storyRendering = "settled";
-      }
-      return;
-    }
-    settling.current = distance > 0.00008;
-    storyProgress.current = next;
+    // The first demand frame includes time spent idle. Start the motion clock
+    // here, then use only active frame time; never spend that idle time at once.
+    const frameDelta = settling.current ? Math.min(delta, 1 / 20) : 0;
+    settling.current = advanceStoryMotion(motion.current, target, frameDelta);
+    storyProgress.current = motion.current.progress;
     if (shell) {
       shell.dataset.storyTarget = target.toFixed(5);
-      shell.dataset.storyProgress = next.toFixed(5);
-      shell.dataset.storyRendering = "active";
+      shell.dataset.storyProgress = storyProgress.current.toFixed(5);
+      shell.dataset.storyRendering = settling.current ? "active" : "settled";
     }
-    invalidate();
+    if (settling.current) invalidate();
   }, -100);
   return null;
 }
@@ -196,6 +193,9 @@ function ConfiguratorControls({ mobile }: { mobile: boolean }) {
   return (
     <OrbitControls
       ref={controls}
+      // Keep the input surface stable: Drei's late events.connected change can
+      // reconnect controls to a parent with touch-action:none, blocking pan-y.
+      domElement={gl.domElement}
       enablePan={false}
       enableZoom={false}
       minPolarAngle={0.75}
@@ -291,10 +291,12 @@ function AdaptiveQuality({ mobile }: { mobile: boolean }) {
   const strongWindows = useRef(0);
 
   useFrame((_, delta) => {
-    if (delta <= 0 || delta > 0.1) return;
+    // Ignore demand-loop idle time, but include slow active frames. Short wheel
+    // bursts must be able to lower DPR before a long continuous drag occurs.
+    if (delta <= 0 || delta > 0.25) return;
     elapsed.current += delta;
     frames.current += 1;
-    if (frames.current < 36) return;
+    if (frames.current < 8 || elapsed.current < 0.35) return;
 
     const fps = frames.current / elapsed.current;
     const minimum = mobile ? 0.82 : 0.9;
@@ -422,7 +424,8 @@ export function KeyboardCanvas({ variant, label }: { variant: CanvasVariant; lab
     return () => window.clearTimeout(timeout);
   }, []);
   useEffect(() => {
-    const query = window.matchMedia("(max-width: 700px)");
+    // Match the CSS story layout so tablets never place the switch behind copy.
+    const query = window.matchMedia("(max-width: 760px)");
     const update = () => setMobile(query.matches);
     update();
     const legacyQuery = query as MediaQueryList & {

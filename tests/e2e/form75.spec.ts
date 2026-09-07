@@ -1,8 +1,20 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectCleanRuntime, monitorRuntime, type RuntimeDiagnostics } from "./runtimeDiagnostics";
 
 const runtimeByPage = new WeakMap<Page, RuntimeDiagnostics>();
 const domClick = (page: Page, selector: string) => page.locator(selector).click();
+
+async function waitForCanvasSize(container: Locator) {
+  // A visible canvas can still have its browser default 300x150 dimensions
+  // before R3F's resize observer runs. Gestures need the final surface size.
+  await expect.poll(() => container.evaluate((element) => {
+    const surface = element.querySelector("canvas");
+    if (!surface) return false;
+    const outer = element.getBoundingClientRect();
+    const inner = surface.getBoundingClientRect();
+    return Math.abs(inner.width - outer.width) < 1 && Math.abs(inner.height - outer.height) < 1;
+  })).toBe(true);
+}
 
 test.beforeEach(async ({ page }) => {
   runtimeByPage.set(page, monitorRuntime(page));
@@ -14,7 +26,7 @@ test.beforeEach(async ({ page }) => {
       // Storage availability is covered separately; it must not block navigation.
     }
   });
-  await page.goto("/");
+  await page.goto("/?debug3d=1");
 });
 
 test.afterEach(async ({ page }) => {
@@ -107,6 +119,7 @@ test("configurator orbit continues beyond a full horizontal turn", async ({ page
 
   const canvas = configurator.locator("canvas");
   await expect(canvas).toBeVisible();
+  await waitForCanvasSize(configurator);
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
   const dragAround = async () => {
@@ -220,6 +233,78 @@ test("switch selector works in the cinematic story", async ({ page }) => {
   await expect(page.getByText("Смягчённый ход")).toBeVisible();
 });
 
+test("rapid switch clicks settle without queued strokes and Space ignores auto-repeat", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium", "Desktop Chromium covers rendered switch press/release behavior.");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const story = page.locator(".canvas-story");
+  await expect(story).not.toHaveAttribute("data-webgl", "checking");
+  test.skip(await story.getAttribute("data-webgl") !== "available", "Hardware WebGL2 is unavailable in this browser.");
+  await page.locator("#switches").evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
+  await expect.poll(async () => Number(await story.getAttribute("data-story-progress"))).toBeGreaterThan(0.76);
+  await expect(story).toHaveAttribute("data-story-rendering", "settled");
+  await waitForCanvasSize(story);
+
+  const button = page.getByRole("button", { name: "Нажать переключатель" });
+  await expect(button).toBeInViewport();
+  const box = await button.boundingBox();
+  expect(box).not.toBeNull();
+  const baseline = Number(await story.getAttribute("data-switch-press-sequence"));
+  const scrollY = await page.evaluate(() => window.scrollY);
+  type StrokeSample = { travel: number; sequence: number };
+  type StrokeProbeWindow = Window & { __switchStrokeProbe?: { samples: StrokeSample[]; request: number } };
+  await page.evaluate(() => {
+    const shell = document.querySelector<HTMLElement>(".canvas-story")!;
+    const probe = { samples: [] as StrokeSample[], request: 0 };
+    (window as StrokeProbeWindow).__switchStrokeProbe = probe;
+    const sample = () => {
+      probe.samples.push({
+        travel: Number(shell.dataset.switchTravel),
+        sequence: Number(shell.dataset.switchPressSequence),
+      });
+      probe.request = requestAnimationFrame(sample);
+    };
+    sample();
+  });
+
+  // Native down/up can both arrive before a rendered frame; each short click
+  // must still produce a visible stroke instead of only toggling React state.
+  for (let click = 0; click < 12; click += 1) {
+    await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.waitForTimeout(50);
+  }
+  await expect(story).toHaveAttribute("data-switch-press-sequence", String(baseline + 12));
+  await expect(story).toHaveAttribute("data-switch-pressed", "false");
+  await expect(story).toHaveAttribute("data-switch-motion", "settled", { timeout: 700 });
+  await expect(story).toHaveAttribute("data-switch-travel", "0.0000");
+  const samples = await page.evaluate(() => {
+    const probe = (window as StrokeProbeWindow).__switchStrokeProbe!;
+    cancelAnimationFrame(probe.request);
+    return probe.samples;
+  });
+  expect(Math.max(...samples.map((sample) => sample.travel))).toBeGreaterThan(0.5);
+  const visibleStrokes = new Set(samples.filter((sample) => sample.travel > 0.1).map((sample) => sample.sequence));
+  expect(visibleStrokes.size).toBeGreaterThan(3);
+  await testInfo.attach("rapid-switch-rendered-strokes", { body: JSON.stringify(samples), contentType: "application/json" });
+
+  await button.focus();
+  await page.keyboard.down("Space");
+  await expect(story).toHaveAttribute("data-switch-press-sequence", String(baseline + 13));
+  await expect(story).toHaveAttribute("data-switch-pressed", "true");
+  await expect(story).toHaveAttribute("data-switch-travel", "1.0000");
+  for (let repeat = 0; repeat < 3; repeat += 1) {
+    await page.keyboard.down("Space");
+    await page.waitForTimeout(50);
+  }
+  await expect(story).toHaveAttribute("data-switch-press-sequence", String(baseline + 13));
+  await expect(story).toHaveAttribute("data-switch-pressed", "true");
+  await page.keyboard.up("Space");
+  await expect(story).toHaveAttribute("data-switch-pressed", "false");
+  await expect(story).toHaveAttribute("data-switch-motion", "settled", { timeout: 700 });
+  await expect(story).toHaveAttribute("data-switch-travel", "0.0000");
+  await expect(story).toHaveAttribute("data-switch-press-sequence", String(baseline + 13));
+  expect(Math.abs(await page.evaluate(() => window.scrollY) - scrollY)).toBeLessThan(2);
+});
+
 test("each FORM switch type selects its own local sound", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, "AudioContext", { configurable: true, value: undefined });
@@ -316,13 +401,16 @@ test("mobile layout, menu, hit targets and assistant fit", async ({ page }, test
 
 test("mobile configurator rotates horizontally and preserves vertical touch scrolling", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium", "Mobile Chromium exposes the configurator touch-action contract.");
-  await page.locator("#configurator").scrollIntoViewIfNeeded();
   const configurator = page.locator(".canvas-configurator");
+  // On mobile the whole section is taller than the viewport; centering it can
+  // leave the interactive surface above the screen and send touch to the header.
+  await configurator.scrollIntoViewIfNeeded();
   await expect(configurator).not.toHaveAttribute("data-webgl", "checking");
   test.skip(await configurator.getAttribute("data-webgl") !== "available", "Hardware WebGL2 is unavailable in this browser.");
   const canvas = configurator.locator("canvas");
   await expect(canvas).toBeVisible();
   await expect.poll(() => canvas.evaluate((element) => getComputedStyle(element).touchAction)).toContain("pan-y");
+  await waitForCanvasSize(configurator);
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
   const session = await page.context().newCDPSession(page);

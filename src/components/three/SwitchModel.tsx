@@ -1,45 +1,163 @@
 "use client";
 
+/* eslint-disable react-hooks/immutability -- R3F owns the canvas; its native input surface is configured alongside imperative frame updates. */
+
 import { RoundedBox } from "@react-three/drei";
-import { useFrame } from "@react-three/fiber";
-import { useRef } from "react";
-import { Group, MathUtils } from "three";
-import { requestSceneFrames, smoothstep, storyProgress } from "@/lib/storyProgress";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useEffect, useRef } from "react";
+import { Camera, Group, MathUtils, Vector3 } from "three";
+import { isSceneDebugEnabled, smoothstep, storyProgress } from "@/lib/storyProgress";
 import { useConfiguratorStore } from "@/stores/configurator";
-import { playSwitchClick } from "@/lib/switchSound";
+import { advanceSwitchMotion, createSwitchMotion } from "@/lib/switchMotion";
+import { useSwitchPress } from "@/lib/useSwitchPress";
 
 const switchColors = { linear: "#b86255", tactile: "#d1aa59", silent: "#658681" } as const;
+const switchBoundsCorners = [-1.34, 1.34].flatMap((x) => (
+  [-1.19, 0.99].flatMap((y) => [-1.24, 1.24].map((z) => new Vector3(x, y, z)))
+));
+
+function placeSwitch(group: Group, anchor: Vector3, centerOffset: Vector3, scale: number) {
+  centerOffset.set(0, -0.1, 0).applyQuaternion(group.quaternion).multiplyScalar(scale);
+  group.position.copy(anchor).sub(centerOffset);
+  group.scale.setScalar(scale);
+  group.updateMatrix();
+}
+
+function fitSwitchToViewport(group: Group, camera: Camera, mobile: boolean, visibility: number, scratch: {
+  anchor: Vector3;
+  ray: Vector3;
+  centerOffset: Vector3;
+  corner: Vector3;
+  centerY: number;
+}) {
+  // Compose against the current camera before rendering, including portrait
+  // desktop/tablet viewports that still have the text column on the right.
+  camera.updateMatrixWorld();
+  const { anchor, ray, centerOffset, corner } = scratch;
+  ray.set(mobile ? 0 : -0.46, mobile ? 0.42 : 1 - 2 * scratch.centerY, 0.5).unproject(camera).sub(camera.position);
+  if (Math.abs(ray.z) < 0.00001) return;
+  anchor.copy(camera.position).addScaledVector(ray, -camera.position.z / ray.z);
+
+  let scale = 1.65;
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    placeSwitch(group, anchor, centerOffset, scale);
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const source of switchBoundsCorners) {
+      corner.copy(source).applyMatrix4(group.matrix).project(camera);
+      minX = Math.min(minX, corner.x);
+      maxX = Math.max(maxX, corner.x);
+      minY = Math.min(minY, corner.y);
+      maxY = Math.max(maxY, corner.y);
+    }
+    const fit = Math.min(
+      (mobile ? 1.72 : 0.86) / (maxX - minX),
+      (mobile ? 0.8 : 1.3) / (maxY - minY),
+      1,
+    );
+    if (fit >= 0.999) break;
+    scale *= fit * 0.98;
+  }
+  // The existing entrance/exit timing stays tied to story progress. Fitting the
+  // full-size pose first prevents resizing from cancelling that reveal.
+  placeSwitch(group, anchor, centerOffset, scale * visibility);
+}
 
 export function SwitchModel({ mobile }: { mobile: boolean }) {
   const root = useRef<Group>(null);
   const stem = useRef<Group>(null);
+  const { camera, gl, invalidate } = useThree();
+  const composition = useRef({ anchor: new Vector3(), ray: new Vector3(), centerOffset: new Vector3(), corner: new Vector3(), centerY: 0.52 });
+  const motion = useRef(createSwitchMotion(useConfiguratorStore.getState().switchPressSequence));
+  const reducedMotion = useRef(false);
+  const debug = useRef(isSceneDebugEnabled());
+  const { pressPointer, releasePointer } = useSwitchPress();
   const switchType = useConfiguratorStore((state) => state.switchType);
-  const pressed = useConfiguratorStore((state) => state.switchPressed);
-  const setPressed = useConfiguratorStore((state) => state.setSwitchPressed);
 
-  useFrame(({ clock }, delta) => {
+  useEffect(() => {
+    if (mobile) return;
+    const copy = document.querySelector<HTMLElement>(".switch-panel .story-copy");
+    if (!copy) return;
+    // Measure only when layout changes, never during scrolling. Match the
+    // text's resting center even in tall windows and after a locale change.
+    const update = () => {
+      const top = Number.parseFloat(window.getComputedStyle(copy).top) || 0;
+      composition.current.centerY = MathUtils.clamp((top + copy.offsetHeight / 2) / window.innerHeight, 0.25, 0.7);
+      invalidate();
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(copy);
+    window.addEventListener("resize", update);
+    update();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [invalidate, mobile]);
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const shell = canvas.closest<HTMLElement>(".canvas-story");
+    const touchAction = canvas.style.touchAction;
+    const pointerEvents = shell?.style.pointerEvents ?? "";
+    const cursor = canvas.style.cursor;
+    canvas.style.touchAction = "pan-y";
+    return () => {
+      canvas.style.touchAction = touchAction;
+      canvas.style.cursor = cursor;
+      if (shell) shell.style.pointerEvents = pointerEvents;
+    };
+  }, [gl]);
+
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => { reducedMotion.current = query.matches; invalidate(); };
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, [invalidate]);
+
+  useFrame((_, delta) => {
     if (!root.current || !stem.current) return;
     const progress = storyProgress.current;
     const visible = smoothstep(0.68, 0.76, progress) * (1 - smoothstep(0.91, 0.98, progress));
-    root.current.scale.setScalar(1.65 * visible);
-    root.current.rotation.y = -0.28 + Math.sin(clock.elapsedTime * 0.32) * 0.055;
     root.current.visible = visible > 0.01;
-    stem.current.position.y = MathUtils.damp(stem.current.position.y, pressed ? 0.13 : 0.48, 13, delta);
+    if (root.current.visible) fitSwitchToViewport(root.current, camera, mobile, visible, composition.current);
+    const { switchPressed, switchPressSequence } = useConfiguratorStore.getState();
+    const stroke = advanceSwitchMotion(motion.current, switchPressSequence, switchPressed, delta, reducedMotion.current);
+    stem.current.position.y = MathUtils.lerp(0.48, 0.13, stroke.travel);
+    const shell = gl.domElement.closest<HTMLElement>(".canvas-story");
+    if (shell) {
+      shell.style.pointerEvents = visible > 0.5 ? "auto" : "none";
+      if (visible <= 0.5) gl.domElement.style.cursor = "";
+      if (debug.current) {
+        shell.dataset.switchTravel = stroke.travel.toFixed(4);
+        shell.dataset.switchPressed = String(switchPressed);
+        shell.dataset.switchPressSequence = String(switchPressSequence);
+        shell.dataset.switchMotion = stroke.active ? "active" : "settled";
+      }
+    }
+    if (stroke.active) invalidate();
   });
 
   return (
     <group
       ref={root}
-      position={[0, -0.55, 0]}
+      visible={false}
       rotation={[-0.14, -0.28, 0]}
       onPointerDown={(event) => {
         event.stopPropagation();
-        playSwitchClick(switchType);
-        setPressed(true);
-        requestSceneFrames("story", 420);
+        if (event.button !== 0 || !pressPointer(event.pointerId)) return;
+        const target = event.target;
+        if (target && "setPointerCapture" in target && typeof target.setPointerCapture === "function") target.setPointerCapture(event.pointerId);
       }}
-      onPointerUp={() => { setPressed(false); requestSceneFrames("story", 320); }}
-      onPointerOut={() => { setPressed(false); requestSceneFrames("story", 320); }}
+      onPointerUp={(event) => releasePointer(event.pointerId)}
+      onPointerCancel={(event) => releasePointer(event.pointerId)}
+      onLostPointerCapture={(event) => releasePointer(event.pointerId)}
+      onPointerOver={() => { gl.domElement.style.cursor = "pointer"; }}
+      onPointerOut={() => { gl.domElement.style.cursor = ""; }}
     >
       <RoundedBox args={[2.48, 0.66, 2.48]} radius={0.16} smoothness={5} position={[0, -0.3, 0]} castShadow>
         {mobile

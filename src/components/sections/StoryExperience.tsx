@@ -7,7 +7,8 @@ import { useEffect, useRef, useState } from "react";
 import { KeyboardCanvas } from "@/components/three/KeyboardCanvas";
 import { useLocale } from "@/components/providers/LocaleProvider";
 import { requestSceneFrames, storyTargetProgress } from "@/lib/storyProgress";
-import { playSwitchClick, preloadSwitchClick } from "@/lib/switchSound";
+import { preloadSwitchClick } from "@/lib/switchSound";
+import { useSwitchPress } from "@/lib/useSwitchPress";
 import { useConfiguratorStore } from "@/stores/configurator";
 import type { SwitchVariant } from "@/types/product";
 
@@ -19,26 +20,42 @@ export function StoryExperience() {
   const { dictionary: t } = useLocale();
   const switchType = useConfiguratorStore((state) => state.switchType);
   const setSwitchType = useConfiguratorStore((state) => state.setSwitchType);
-  const setPressed = useConfiguratorStore((state) => state.setSwitchPressed);
+  const { pressButtonHandlers } = useSwitchPress();
 
   useEffect(() => {
     preloadSwitchClick();
   }, []);
 
   useGSAP(() => {
+    let currentStage = -1;
+    const updateProgress = (self: ScrollTrigger) => {
+      // ScrollTrigger measures the section; native scroll supplies the target
+      // immediately, independently of GSAP's ticker and wheel-event cadence.
+      const progress = Math.min(1, Math.max(0, (window.scrollY - self.start) / Math.max(1, self.end - self.start)));
+      if (storyTargetProgress.current !== progress) {
+        storyTargetProgress.current = progress;
+        requestSceneFrames("story", 0);
+      }
+      const nextStage = Math.min(5, Math.round(progress * 5));
+      if (currentStage !== nextStage) {
+        currentStage = nextStage;
+        setActiveStage(nextStage);
+      }
+    };
     const trigger = ScrollTrigger.create({
       trigger: root.current,
       start: "top top",
       end: "bottom bottom",
       invalidateOnRefresh: true,
-      onUpdate: (self) => {
-        storyTargetProgress.current = self.progress;
-        requestSceneFrames("story", 0);
-        const nextStage = Math.min(5, Math.round(self.progress * 5));
-        setActiveStage((current) => current === nextStage ? current : nextStage);
-      },
+      onRefresh: updateProgress,
     });
-    return () => trigger.kill();
+    const onScroll = () => updateProgress(trigger);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    updateProgress(trigger);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      trigger.kill();
+    };
   }, { scope: root });
 
   const switches: SwitchVariant[] = ["linear", "tactile", "silent"];
@@ -115,24 +132,7 @@ export function StoryExperience() {
               type="button"
               onPointerEnter={preloadSwitchClick}
               onFocus={preloadSwitchClick}
-              onPointerDown={() => { playSwitchClick(switchType); setPressed(true); requestSceneFrames("story", 420); }}
-              onPointerUp={() => { setPressed(false); requestSceneFrames("story", 320); }}
-              onPointerLeave={() => { setPressed(false); requestSceneFrames("story", 320); }}
-              onPointerCancel={() => { setPressed(false); requestSceneFrames("story", 320); }}
-              onKeyDown={(event) => {
-                if ((event.key === "Enter" || event.key === " ") && !event.repeat) {
-                  playSwitchClick(switchType);
-                  setPressed(true);
-                  requestSceneFrames("story", 420);
-                }
-              }}
-              onKeyUp={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  setPressed(false);
-                  requestSceneFrames("story", 320);
-                }
-              }}
-              onBlur={() => { setPressed(false); requestSceneFrames("story", 320); }}
+              {...pressButtonHandlers}
             >
               <i />{t.story.press}
             </button>

@@ -7,14 +7,19 @@ const switchSounds: Record<SwitchVariant, { path: string; volume: number }> = {
 };
 const variants = Object.keys(switchSounds) as SwitchVariant[];
 const minimumInterval = 38;
-const fallbackVoices = 4;
+const maximumVoices = 4;
+const maximumStartDelay = 90;
 
 let audioContext: AudioContext | null = null;
-let lastPlayback = 0;
+let resumePending = false;
+let lastPlayback = Number.NEGATIVE_INFINITY;
 const buffers = new Map<SwitchVariant, AudioBuffer>();
 const bufferPromises = new Map<SwitchVariant, Promise<AudioBuffer | null>>();
 const fallbackPools = new Map<SwitchVariant, HTMLAudioElement[]>();
 const fallbackIndices = new Map<SwitchVariant, number>();
+const bufferVoices = new Set<AudioBufferSourceNode>();
+const fallbackVoices = new Set<HTMLAudioElement>();
+const pendingFallbacks = new Map<HTMLAudioElement, ReturnType<typeof setTimeout>>();
 
 type AudioWindow = Window & { webkitAudioContext?: typeof AudioContext };
 
@@ -63,9 +68,10 @@ function getFallbackPool(variant: SwitchVariant) {
   if (cached) return cached;
 
   const { volume } = switchSounds[variant];
-  const pool = Array.from({ length: fallbackVoices }, () => {
+  const pool = Array.from({ length: maximumVoices }, () => {
     const audio = new Audio();
-    audio.preload = "none";
+    audio.src = switchSounds[variant].path;
+    audio.preload = "auto";
     audio.volume = volume;
     return audio;
   });
@@ -81,12 +87,44 @@ function playFallback(variant: SwitchVariant) {
   const index = fallbackIndices.get(variant) ?? 0;
   const audio = available ?? pool[index % pool.length];
   fallbackIndices.set(variant, (index + 1) % pool.length);
-  if (!audio.src) audio.src = switchSounds[variant].path;
+  // A decode/network delay may still be pending. Cancel it rather than keeping
+  // old clicks that could all start once the browser finally has audio data.
+  for (const [pending, timer] of pendingFallbacks) {
+    clearTimeout(timer);
+    pending.pause();
+    fallbackVoices.delete(pending);
+  }
+  pendingFallbacks.clear();
+  fallbackVoices.delete(audio);
+  while (fallbackVoices.size >= maximumVoices) {
+    const oldest = fallbackVoices.values().next().value;
+    if (!oldest) break;
+    oldest.pause();
+    fallbackVoices.delete(oldest);
+  }
   audio.currentTime = 0;
-  void audio.play().catch(() => undefined);
+  fallbackVoices.add(audio);
+  const expiry = setTimeout(() => {
+    audio.pause();
+    pendingFallbacks.delete(audio);
+    fallbackVoices.delete(audio);
+  }, maximumStartDelay);
+  pendingFallbacks.set(audio, expiry);
+  void audio.play().catch(() => undefined).finally(() => {
+    if (pendingFallbacks.get(audio) === expiry) {
+      clearTimeout(expiry);
+      pendingFallbacks.delete(audio);
+    }
+  });
 }
 
 function playBuffer(context: AudioContext, buffer: AudioBuffer, volume: number) {
+  while (bufferVoices.size >= maximumVoices) {
+    const oldest = bufferVoices.values().next().value;
+    if (!oldest) break;
+    oldest.stop();
+    bufferVoices.delete(oldest);
+  }
   const source = context.createBufferSource();
   const gain = context.createGain();
   source.buffer = buffer;
@@ -94,14 +132,17 @@ function playBuffer(context: AudioContext, buffer: AudioBuffer, volume: number) 
   source.connect(gain);
   gain.connect(context.destination);
   source.addEventListener("ended", () => {
+    bufferVoices.delete(source);
     source.disconnect();
     gain.disconnect();
   }, { once: true });
+  bufferVoices.add(source);
   source.start();
 }
 
 export function preloadSwitchClick(): void {
   try {
+    variants.forEach(getFallbackPool);
     if (!getAudioContext()) return;
     variants.forEach((variant) => void preloadAudioBuffer(variant));
   } catch {
@@ -118,17 +159,16 @@ export function playSwitchClick(variant: SwitchVariant): void {
   try {
     const context = getAudioContext();
     const buffer = buffers.get(variant);
-    if (context && buffer) {
-      if (context.state === "suspended") {
-        void context.resume()
-          .then(() => playBuffer(context, buffer, switchSounds[variant].volume))
-          .catch(() => playFallback(variant));
-      } else {
-        playBuffer(context, buffer, switchSounds[variant].volume);
-      }
+    if (context?.state === "running" && buffer) {
+      playBuffer(context, buffer, switchSounds[variant].volume);
       return;
     }
 
+    if (context?.state === "suspended" && !resumePending) {
+      resumePending = true;
+      // Resume prepares future presses only. Never replay stale presses here.
+      void context.resume().catch(() => undefined).finally(() => { resumePending = false; });
+    }
     void preloadAudioBuffer(variant);
     playFallback(variant);
   } catch {

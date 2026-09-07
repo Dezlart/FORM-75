@@ -3,6 +3,7 @@ import type { BacklightPreset, CaseFinish, KeycapVariant, ProductConfiguration, 
 
 interface ConfiguratorState extends ProductConfiguration {
   switchPressed: boolean;
+  switchPressSequence: number;
   setCaseFinish: (finish: CaseFinish) => void;
   setKeycaps: (keycaps: KeycapVariant) => void;
   setSwitchType: (switchType: SwitchVariant) => void;
@@ -18,10 +19,14 @@ export const useConfiguratorStore = create<ConfiguratorState>((set) => ({
   backlight: true,
   backlightPreset: "neutral",
   switchPressed: false,
+  switchPressSequence: 0,
   setCaseFinish: (caseFinish) => set({ caseFinish }),
   setKeycaps: (keycaps) => set({ keycaps }),
   setSwitchType: (switchType) => set({ switchType }),
   setBacklight: (backlight) => set({ backlight }),
   setBacklightPreset: (backlightPreset) => set({ backlightPreset }),
-  setSwitchPressed: (switchPressed) => set({ switchPressed }),
+  setSwitchPressed: (switchPressed) => set((state) => state.switchPressed === switchPressed ? state : {
+    switchPressed,
+    switchPressSequence: state.switchPressSequence + (switchPressed ? 1 : 0),
+  }),
 }));
