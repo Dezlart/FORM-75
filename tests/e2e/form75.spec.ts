@@ -22,6 +22,7 @@ test.beforeEach(async ({ page }) => {
     try {
       window.localStorage.clear();
       window.localStorage.setItem("form75-theme", "dark");
+      window.localStorage.setItem("form75-theme-v2", "dark");
     } catch {
       // Storage availability is covered separately; it must not block navigation.
     }
@@ -47,20 +48,20 @@ test("homepage hydrates and navigation anchors work", async ({ page }, testInfo)
   await expect(page.locator("#connectivity")).toBeInViewport();
 });
 
-test("locale, localized chat trigger and theme cycle through both states", async ({ page }) => {
+test("locale and localized chat trigger work with the fixed site theme", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.reload();
   await expect(page.locator("html")).toHaveClass(/light/);
+  await expect(page.getByRole("button", { name: "Переключить тему" })).toHaveCount(0);
   await expect(page.getByTestId("assistant-open")).toHaveAttribute("aria-label", "Открыть FORM AI");
   const language = page.getByRole("button", { name: "Сменить язык" });
   await language.click();
   await expect(page.getByText("Precision in every press.")).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.getByTestId("assistant-open")).toHaveAttribute("aria-label", "Open FORM AI");
+  await expect(page.getByRole("button", { name: "Toggle theme" })).toHaveCount(0);
   await page.getByRole("button", { name: "Change language" }).click();
   await expect(page.getByText("Точность в каждом нажатии.")).toBeVisible();
-  const theme = page.getByRole("button", { name: "Переключить тему" });
-  await theme.click();
-  await expect(page.locator("html")).toHaveClass(/dark/);
-  await theme.click();
   await expect(page.locator("html")).toHaveClass(/light/);
 });
 

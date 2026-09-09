@@ -48,8 +48,8 @@ test("disabled Safari storage does not disable controls", async ({ page }, testI
   await expect(page.locator("html")).toHaveClass(/light/);
   await page.getByRole("button", { name: "Сменить язык" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
-  await page.getByRole("button", { name: "Toggle theme" }).click();
-  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(page.getByRole("button", { name: "Toggle theme" })).toHaveCount(0);
+  await expect(page.locator("html")).toHaveClass(/light/);
   await page.getByTestId("assistant-open").click();
   await expect(page.getByTestId("assistant-panel")).toBeVisible();
 

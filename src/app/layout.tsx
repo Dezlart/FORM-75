@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "@fontsource-variable/inter";
 import "./globals.css";
+import "./surface.css";
 import { AppProviders } from "@/components/providers/AppProviders";
 import { ScrollRestoration } from "@/components/providers/ScrollRestoration";
 
@@ -19,7 +20,7 @@ export const metadata: Metadata = {
   icons: { icon: "/favicon.svg" },
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f3f4f2" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#b8b8b5" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (

@@ -46,7 +46,7 @@ export function ConfiguratorSection() {
         </OptionGroup>
         <div className="backlight-row">
           <div><span className="option-label">{t.config.backlight}</span><strong>{state.backlight ? t.config.backlightOn : t.config.backlightOff}</strong></div>
-          <button type="button" className={`toggle ${state.backlight ? "on" : ""}`} onClick={() => state.setBacklight(!state.backlight)} aria-pressed={state.backlight} data-testid="backlight-toggle"><i /></button>
+          <button type="button" className={`toggle ${state.backlight ? "on" : ""}`} onClick={() => state.setBacklight(!state.backlight)} aria-label={t.config.backlight} aria-pressed={state.backlight} data-testid="backlight-toggle"><i /></button>
         </div>
         {state.backlight && <OptionGroup label={t.config.lightColor}>{presets.map((value) => <Option key={value} active={state.backlightPreset === value} onClick={() => state.setBacklightPreset(value)} testId={`light-${value}`} swatch={`light-${value}`}>{t.config[value]}</Option>)}</OptionGroup>}
         <a className="configure-cta" href="#final"><span>{t.config.cta}</span><small>{t.config.concept}</small></a>

@@ -395,8 +395,7 @@ function StudioLighting({ dark, story, active, mobile }: { dark: boolean; story:
 function Scene({ variant, dark, active, mobile }: { variant: CanvasVariant; dark: boolean; active: boolean; mobile: boolean }) {
   return (
     <>
-      <color attach="background" args={[dark ? "#181a1c" : "#f3f4f2"]} />
-      <fog attach="fog" args={[dark ? "#181a1c" : "#f3f4f2", 21, 34]} />
+      <fog attach="fog" args={["#b8b8b5", 21, 34]} />
       <ToneMapping dark={dark} />
       {variant === "story" && <StoryProgressController />}
       {process.env.NODE_ENV !== "production" && <PerformanceProbe />}
@@ -474,7 +473,7 @@ export function KeyboardCanvas({ variant, label }: { variant: CanvasVariant; lab
           <Canvas
             camera={{ position: variant === "story" ? (mobile ? [5, 7.8, 13.5] : [8.2, 6.3, 11]) : (mobile ? [5.4, 6.2, 10.5] : [5.9, 5.3, 8.5]), fov: mobile ? 46 : 35, near: 0.1, far: 60 }}
             dpr={mobile ? [0.82, 1] : [0.9, 1.2]}
-            gl={{ antialias: true, alpha: false, powerPreference: "default", failIfMajorPerformanceCaveat: true }}
+            gl={{ antialias: true, alpha: true, powerPreference: "default", failIfMajorPerformanceCaveat: true }}
             shadows={!mobile ? "soft" : false}
             frameloop="demand"
             performance={{ min: 0.55 }}

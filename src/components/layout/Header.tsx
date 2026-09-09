@@ -1,21 +1,14 @@
 "use client";
 
-import { Menu, Moon, Sun, X } from "lucide-react";
-import { useTheme } from "next-themes";
+import { Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocale } from "@/components/providers/LocaleProvider";
 
 export function Header() {
   const { dictionary: t, locale, toggleLocale } = useLocale();
-  const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => setMounted(true));
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -49,14 +42,6 @@ export function Header() {
           <button className="language-toggle" type="button" onClick={toggleLocale} aria-label={t.a11y.language}>
             <span className={locale === "ru" ? "active" : ""}>RU</span><i />
             <span className={locale === "en" ? "active" : ""}>EN</span>
-          </button>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-            aria-label={t.a11y.theme}
-          >
-            {mounted && resolvedTheme === "light" ? <Moon size={17} /> : <Sun size={17} />}
           </button>
           <button className="icon-button mobile-menu-button" type="button" onClick={() => setMenuOpen((open) => !open)} aria-label={t.nav.menu} aria-expanded={menuOpen}>
             {menuOpen ? <X size={18} /> : <Menu size={18} />}

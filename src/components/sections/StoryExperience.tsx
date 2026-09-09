@@ -65,6 +65,7 @@ export function StoryExperience() {
     <section ref={root} className="story-experience" aria-label="FORM 75 product story">
       <div className="story-sticky">
         <KeyboardCanvas variant="story" label={t.a11y.scene} />
+        <div className="surface-reflections" aria-hidden="true" />
         <div className="story-progress" aria-hidden="true">
           {[0, 1, 2, 3, 4, 5].map((stage) => <i key={stage} className={activeStage === stage ? "active" : ""} />)}
         </div>
@@ -74,11 +75,13 @@ export function StoryExperience() {
           <div className="hero-copy">
             <p className="eyebrow">{t.hero.eyebrow}</p>
             <h1>{t.hero.title}</h1>
-            <p className="hero-subtitle">{t.hero.subtitle}</p>
-            <p className="hero-support">{t.hero.support}</p>
-            <div className="hero-actions">
-              <a className="primary-button" href="#design">{t.hero.cta}</a>
-              <span>{t.hero.price}</span>
+            <div className="hero-details">
+              <p className="hero-subtitle">{t.hero.subtitle}</p>
+              <p className="hero-support">{t.hero.support}</p>
+              <div className="hero-actions">
+                <a className="primary-button" href="#design">{t.hero.cta}</a>
+                <span>{t.hero.price}</span>
+              </div>
             </div>
           </div>
           <div className="scroll-hint"><span />{t.hero.hint}</div>
@@ -119,7 +122,7 @@ export function StoryExperience() {
             <p>{t.story.switchCopy}</p>
             <div className="switch-selector" role="group" aria-label={t.config.switches}>
               {switches.map((variant) => (
-                <button key={variant} type="button" onClick={() => { setSwitchType(variant); requestSceneFrames("story", 260); }} className={switchType === variant ? "active" : ""} data-testid={`switch-${variant}`}>
+                <button key={variant} type="button" onClick={() => { setSwitchType(variant); requestSceneFrames("story", 260); }} className={switchType === variant ? "active" : ""} aria-pressed={switchType === variant} data-testid={`switch-${variant}`}>
                   {t.story[variant].name}
                 </button>
               ))}

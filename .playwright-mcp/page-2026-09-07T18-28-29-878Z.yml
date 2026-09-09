@@ -1,0 +1,249 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "FORM 75" [ref=e4] [cursor=pointer]:
+        - /url: "#top"
+        - text: FORM.
+      - navigation "Primary navigation" [ref=e5]:
+        - link "Дизайн" [ref=e6] [cursor=pointer]:
+          - /url: "#design"
+        - link "Внутри" [ref=e7] [cursor=pointer]:
+          - /url: "#inside"
+        - link "Переключатели" [ref=e8] [cursor=pointer]:
+          - /url: "#switches"
+        - link "Подключение" [ref=e9] [cursor=pointer]:
+          - /url: "#connectivity"
+        - link "Конфигуратор" [ref=e10] [cursor=pointer]:
+          - /url: "#configurator"
+        - link "Характеристики" [ref=e11] [cursor=pointer]:
+          - /url: "#specs"
+      - generic [ref=e12]:
+        - button "Сменить язык" [ref=e13] [cursor=pointer]:
+          - generic [ref=e14]: RU
+          - generic [ref=e16]: EN
+        - button "Переключить тему" [ref=e17] [cursor=pointer]
+  - main [ref=e24]:
+    - region "FORM 75 product story" [ref=e25]:
+      - generic [ref=e26]:
+        - img "Интерактивная трёхмерная модель клавиатуры FORM 75"
+        - generic [aria-hidden]:
+          - generic: "75"
+      - generic:
+        - article:
+          - generic [ref=e34]:
+            - paragraph [ref=e35]: Механическая клавиатура 75%
+            - heading "FORM 75" [level=1] [ref=e36]
+            - paragraph [ref=e37]: Точность в каждом нажатии.
+            - paragraph [ref=e38]: CNC-алюминий. Упругая конструкция Gasket mount. Три режима подключения.
+            - generic [ref=e39]:
+              - link "Исследовать" [ref=e40] [cursor=pointer]:
+                - /url: "#design"
+              - generic [ref=e41]: От $249
+          - generic [ref=e42]: Прокрутите, чтобы разобрать
+        - article:
+          - generic [ref=e44]:
+            - paragraph [ref=e45]: 01 — Форма
+            - heading "Вырезана из цельного алюминия." [level=2] [ref=e46]
+            - paragraph [ref=e47]: Корпус из алюминия 6063 проходит точную обработку на станке с ЧПУ. Выверенные фаски подчёркивают форму, а монолитная конструкция гасит лишние вибрации.
+        - article:
+          - generic [ref=e48]:
+            - paragraph [ref=e49]: 02 — Архитектура
+            - heading "Разобрана до идеи." [level=2] [ref=e50]
+            - paragraph [ref=e51]: Каждый слой решает свою задачу. Ничего случайного — от нижней части корпуса до профиля кейкапов.
+            - generic "Keyboard layers" [ref=e52]:
+              - generic [ref=e53]:
+                - generic [ref=e54]: "01"
+                - text: Кейкапы
+              - generic [ref=e55]:
+                - generic [ref=e56]: "02"
+                - text: Переключатели
+              - generic [ref=e57]:
+                - generic [ref=e58]: "03"
+                - text: Монтажная пластина
+              - generic [ref=e59]:
+                - generic [ref=e60]: "04"
+                - text: Демпфирующий слой
+              - generic [ref=e61]:
+                - generic [ref=e62]: "05"
+                - text: Печатная плата
+              - generic [ref=e63]:
+                - generic [ref=e64]: "06"
+                - text: Аккумулятор
+              - generic [ref=e65]:
+                - generic [ref=e66]: "07"
+                - text: Нижняя часть корпуса
+        - article:
+          - generic [ref=e67]:
+            - paragraph [ref=e68]: 03 — Внутри
+            - heading "Тишина внутри. Точность снаружи." [level=2] [ref=e69]
+            - paragraph [ref=e70]: Gasket mount изолирует монтажную пластину от корпуса. Два слоя демпфирования гасят лишний резонанс, а hot-swap PCB позволяет менять переключатели без пайки.
+            - generic [ref=e71]:
+              - generic [ref=e72]: GASKET
+              - generic [ref=e73]: HOT-SWAP
+              - generic [ref=e74]: 4500 mAh
+        - article:
+          - generic [ref=e75]:
+            - paragraph [ref=e76]: 04 — Переключатели
+            - heading "Характер на кончиках пальцев." [level=2] [ref=e77]
+            - paragraph [ref=e78]: Три характера нажатия в одном выверенном корпусе. Нажмите на переключатель и выберите свой.
+            - group "Переключатели" [ref=e79]:
+              - button "FORM Linear" [pressed] [ref=e80] [cursor=pointer]
+              - button "FORM Tactile" [ref=e81] [cursor=pointer]
+              - button "FORM Silent" [ref=e82] [cursor=pointer]
+            - generic [ref=e83]:
+              - generic [ref=e84]: 45 гс
+              - generic [ref=e85]: ·Плавный ход
+              - generic [ref=e86]: ·Срабатывание на 2,0 мм
+            - button "Нажать переключатель" [ref=e87] [cursor=pointer]
+        - article:
+          - generic [ref=e89]:
+            - paragraph [ref=e90]: 05 — Целое
+            - heading "Собрана вокруг вашего ритма." [level=2] [ref=e91]
+            - paragraph [ref=e92]: Слои возвращаются на место. Конструкция исчезает из внимания — остаётся только действие.
+    - generic [ref=e93]:
+      - generic [ref=e94]:
+        - paragraph [ref=e95]: Подключение
+        - heading "Три способа подключения. Ни одного компромисса." [level=2] [ref=e96]
+        - paragraph [ref=e97]: Переключайтесь между рабочими устройствами без пауз. FORM 75 запоминает несколько Bluetooth-подключений и работает до 120 часов с выключенной подсветкой.
+      - generic [ref=e98]:
+        - generic [ref=e99]:
+          - strong [ref=e104]: USB‑C
+          - generic [ref=e105]: 1000 Гц · зарядка и данные
+        - generic [ref=e106]:
+          - strong [ref=e113]: 2,4 ГГц
+          - generic [ref=e114]: 1000 Гц · минимальная задержка
+        - generic [ref=e115]:
+          - strong [ref=e118]: Bluetooth
+          - generic [ref=e119]: Несколько устройств
+      - generic [ref=e120]:
+        - generic [ref=e121]:
+          - generic [ref=e122]: "01"
+          - strong [ref=e123]: 4500 мА·ч
+        - generic [ref=e124]:
+          - generic [ref=e125]: "02"
+          - strong [ref=e126]: до 120 часов
+        - generic [ref=e127]:
+          - generic [ref=e128]: "03"
+          - strong [ref=e129]: Windows / macOS
+    - generic [ref=e130]:
+      - generic [ref=e131]:
+        - img "Интерактивная трёхмерная модель клавиатуры FORM 75" [ref=e132]
+        - paragraph: ↔ Вращайте модель мышью или пальцем
+      - generic [ref=e133]:
+        - paragraph [ref=e134]: Конфигуратор
+        - heading "Соберите свою FORM." [level=2] [ref=e135]
+        - paragraph [ref=e136]: Корпус, кейкапы, характер нажатия и свет — каждое изменение сразу появляется на вашей клавиатуре.
+        - group "Корпус" [ref=e137]:
+          - generic [ref=e139]:
+            - button "Graphite" [ref=e140] [cursor=pointer]
+            - button "Silver" [pressed] [ref=e142] [cursor=pointer]
+            - button "Sand" [ref=e144] [cursor=pointer]
+        - group "Кейкапы" [ref=e146]:
+          - generic [ref=e148]:
+            - button "Obsidian" [ref=e149] [cursor=pointer]
+            - button "Porcelain" [pressed] [ref=e151] [cursor=pointer]
+            - button "Ember" [ref=e153] [cursor=pointer]
+        - group "Переключатели" [ref=e155]:
+          - generic [ref=e157]:
+            - button "FORM Linear" [pressed] [ref=e158] [cursor=pointer]
+            - button "FORM Tactile" [ref=e159] [cursor=pointer]
+            - button "FORM Silent" [ref=e160] [cursor=pointer]
+        - generic [ref=e161]:
+          - generic [ref=e162]:
+            - generic [ref=e163]: Подсветка
+            - strong [ref=e164]: Включена
+          - button "Подсветка" [pressed] [ref=e165] [cursor=pointer]
+        - group "Цвет света" [ref=e167]:
+          - generic [ref=e169]:
+            - button "Нейтральный" [pressed] [ref=e170] [cursor=pointer]
+            - button "Тёплый" [ref=e172] [cursor=pointer]
+            - button "Холодный" [ref=e174] [cursor=pointer]
+        - link "Настроить — $249 Демонстрационная конфигурация · без оформления заказа" [ref=e176] [cursor=pointer]:
+          - /url: "#final"
+          - generic [ref=e177]: Настроить — $249
+          - generic [ref=e178]: Демонстрационная конфигурация · без оформления заказа
+    - generic [ref=e179]:
+      - generic [ref=e180]:
+        - paragraph [ref=e181]: Детали
+        - heading "Спроектирована целиком." [level=2] [ref=e182]
+      - generic [ref=e183]:
+        - generic [ref=e184]:
+          - term [ref=e185]:
+            - generic [ref=e186]: "01"
+            - text: Раскладка
+          - definition [ref=e187]: 75%
+        - generic [ref=e188]:
+          - term [ref=e189]:
+            - generic [ref=e190]: "02"
+            - text: Корпус
+          - definition [ref=e191]: CNC-алюминий 6063
+        - generic [ref=e192]:
+          - term [ref=e193]:
+            - generic [ref=e194]: "03"
+            - text: Крепление
+          - definition [ref=e195]: Gasket mount
+        - generic [ref=e196]:
+          - term [ref=e197]:
+            - generic [ref=e198]: "04"
+            - text: Печатная плата
+          - definition [ref=e199]: hot-swap, 5-pin MX
+        - generic [ref=e200]:
+          - term [ref=e201]:
+            - generic [ref=e202]: "05"
+            - text: Подсветка
+          - definition [ref=e203]: South-facing per-key RGB
+        - generic [ref=e204]:
+          - term [ref=e205]:
+            - generic [ref=e206]: "06"
+            - text: Кейкапы
+          - definition [ref=e207]: Double-shot PBT
+        - generic [ref=e208]:
+          - term [ref=e209]:
+            - generic [ref=e210]: "07"
+            - text: Подключение
+          - definition [ref=e211]: USB-C / Bluetooth / 2,4 ГГц
+        - generic [ref=e212]:
+          - term [ref=e213]:
+            - generic [ref=e214]: "08"
+            - text: Батарея
+          - definition [ref=e215]: 4500 мА·ч
+        - generic [ref=e216]:
+          - term [ref=e217]:
+            - generic [ref=e218]: "09"
+            - text: Частота опроса
+          - definition [ref=e219]: До 1000 Гц
+        - generic [ref=e220]:
+          - term [ref=e221]:
+            - generic [ref=e222]: "10"
+            - text: Совместимость
+          - definition [ref=e223]: Windows / macOS
+        - generic [ref=e224]:
+          - term [ref=e225]:
+            - generic [ref=e226]: "11"
+            - text: NKRO
+          - definition [ref=e227]: Да
+        - generic [ref=e228]:
+          - term [ref=e229]:
+            - generic [ref=e230]: "12"
+            - text: Вес
+          - definition [ref=e231]: Около 1,7 кг
+        - generic [ref=e232]:
+          - term [ref=e233]:
+            - generic [ref=e234]: "13"
+            - text: Ручка энкодера
+          - definition [ref=e235]: CNC-алюминий
+        - generic [ref=e236]:
+          - term [ref=e237]:
+            - generic [ref=e238]: "14"
+            - text: Цена
+          - definition [ref=e239]: $249
+    - generic [ref=e240]:
+      - paragraph [ref=e241]: FORM 75
+      - heading "Инструмент, который не мешает мысли становиться действием." [level=2] [ref=e242]
+      - link "Создать свою FORM" [ref=e243] [cursor=pointer]:
+        - /url: "#configurator"
+      - generic [ref=e247]:
+        - generic [ref=e248]: FORM 75 / 2026
+        - generic [ref=e249]: FORM 75 — концепт вымышленного продукта.
+  - button "Открыть FORM AI" [ref=e250] [cursor=pointer]:
+    - generic [ref=e253]: СПРОСИТЬ FORM
