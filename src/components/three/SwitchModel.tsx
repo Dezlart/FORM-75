@@ -6,7 +6,7 @@ import { RoundedBox } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import { Camera, Group, MathUtils, Vector3 } from "three";
-import { isSceneDebugEnabled, smoothstep, storyProgress } from "@/lib/storyProgress";
+import { getStorySwitchStage, isSceneDebugEnabled, storyProgress } from "@/lib/storyProgress";
 import { useConfiguratorStore } from "@/stores/configurator";
 import { advanceSwitchMotion, createSwitchMotion } from "@/lib/switchMotion";
 import { useSwitchPress } from "@/lib/useSwitchPress";
@@ -34,7 +34,7 @@ function fitSwitchToViewport(group: Group, camera: Camera, mobile: boolean, visi
   // desktop/tablet viewports that still have the text column on the right.
   camera.updateMatrixWorld();
   const { anchor, ray, centerOffset, corner } = scratch;
-  ray.set(mobile ? 0 : -0.46, mobile ? 0.42 : 1 - 2 * scratch.centerY, 0.5).unproject(camera).sub(camera.position);
+  ray.set(mobile ? 0 : -0.4, mobile ? 0.3 : 1 - 2 * scratch.centerY, 0.5).unproject(camera).sub(camera.position);
   if (Math.abs(ray.z) < 0.00001) return;
   anchor.copy(camera.position).addScaledVector(ray, -camera.position.z / ray.z);
 
@@ -122,7 +122,7 @@ export function SwitchModel({ mobile }: { mobile: boolean }) {
   useFrame((_, delta) => {
     if (!root.current || !stem.current) return;
     const progress = storyProgress.current;
-    const visible = smoothstep(0.68, 0.76, progress) * (1 - smoothstep(0.91, 0.98, progress));
+    const visible = getStorySwitchStage(progress);
     root.current.visible = visible > 0.01;
     if (root.current.visible) fitSwitchToViewport(root.current, camera, mobile, visible, composition.current);
     const { switchPressed, switchPressSequence } = useConfiguratorStore.getState();

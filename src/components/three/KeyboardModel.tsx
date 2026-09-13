@@ -25,7 +25,7 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { keyboardKeys, keycapRowHeight as rowHeight, keycapRowLift as rowLift, keycapRowTilt as rowTilt } from "./keyboardLayout";
 import { KeycapMaterial, RgbLighting, SwitchHousingMaterial } from "./KeyboardRgb";
 import { useConfiguratorStore } from "@/stores/configurator";
-import { requestSceneFrames, smoothstep, storyProgress } from "@/lib/storyProgress";
+import { getStoryKeyboardPose, requestSceneFrames, smoothstep, storyProgress } from "@/lib/storyProgress";
 import type { CaseFinish, KeycapVariant } from "@/types/product";
 
 const caseFinishes = {
@@ -426,11 +426,8 @@ export function KeyboardModel({ variant, dark, mobile }: { variant: ModelVariant
     if (variant === "configurator") return;
 
     const progress = storyProgress.current;
-    const explodeIn = smoothstep(0.27, 0.48, progress);
-    const reassemble = smoothstep(0.9, 0.99, progress);
-    const exploded = explodeIn * (1 - reassemble);
-    const explodedComposition = smoothstep(0.29, 0.38, progress) * (1 - smoothstep(0.57, 0.65, progress));
-    const switchStage = smoothstep(0.68, 0.76, progress) * (1 - smoothstep(0.91, 0.98, progress));
+    const pose = getStoryKeyboardPose(progress, mobile);
+    const { architecture: architectureStage, exploded } = pose;
     const internalsVisible = exploded > 0.003;
     if (battery.current) battery.current.visible = internalsVisible;
     if (pcb.current) pcb.current.visible = internalsVisible;
@@ -449,35 +446,25 @@ export function KeyboardModel({ variant, dark, mobile }: { variant: ModelVariant
     const designTurn = smoothstep(0.1, 0.26, progress);
     const highAngle = smoothstep(0.28, 0.55, progress);
     const returnHome = smoothstep(0.91, 0.99, progress);
-    const architectureStage = smoothstep(0.3, 0.36, progress) * (1 - smoothstep(0.46, 0.52, progress));
-    const insideStage = smoothstep(0.48, 0.54, progress) * (1 - smoothstep(0.64, 0.69, progress));
     const targetX = MathUtils.lerp(-0.1 - highAngle * 0.5 + architectureStage * 0.16, -0.1, returnHome);
     const targetY = MathUtils.lerp(-0.16 + designTurn * 0.16 + highAngle * 0.18, -0.16, returnHome);
-    const baseX = mobile ? 0.1 : 5.2;
-    const stageOffsetX = architectureStage * (mobile ? 0.7 : -1.35) + insideStage * (mobile ? 0.24 : 3.35);
-    const composedX = MathUtils.lerp(baseX - explodedComposition * (mobile ? 0.55 : 2.45) + stageOffsetX, baseX, returnHome);
-    const baseY = mobile ? -1.48 : -0.62;
-    const stageOffsetY = mobile ? architectureStage * 1.2 + insideStage * 3.3 : 0;
-    const baseScale = mobile ? 0.49 : 0.64;
     root.current.rotation.x = targetX;
     root.current.rotation.y = targetY;
     root.current.rotation.z = architectureStage * 0.035;
-    // Retreat into the existing fog, then stop drawing the fully hidden model.
-    // Preserve scale: perspective supplies the depth change without leaving a
-    // miniature keyboard floating beside the switch during its feature stage.
-    root.current.position.x = composedX;
-    root.current.position.y = baseY - exploded * 0.72 - switchStage * 3 + stageOffsetY;
-    root.current.position.z = -42 * switchStage;
-    root.current.scale.setScalar(baseScale * (1 - architectureStage * 0.07));
-    root.current.visible = switchStage < 0.94;
+    // The Inside pose is held laterally while the model retreats into the fog.
+    // Camera reframing begins afterward, so the movement reads as one clean
+    // backward exit instead of right-left-back corrections.
+    root.current.position.set(pose.x, pose.y, pose.z);
+    root.current.scale.setScalar(pose.scale);
+    root.current.visible = pose.visible;
   });
 
   return (
     <group
       ref={root}
-      position={variant === "configurator" ? [0, -0.38, 0] : [mobile ? 0.1 : 5.2, mobile ? -1.48 : -0.62, 0]}
+      position={variant === "configurator" ? [0, -0.38, 0] : [mobile ? 0.1 : 5.2, mobile ? -1.35 : -0.62, 0]}
       rotation={variant === "configurator" ? [0.045, -0.18, 0] : [-0.1, -0.16, 0]}
-      scale={variant === "configurator" ? (mobile ? 0.56 : 0.7) : (mobile ? 0.49 : 0.64)}
+      scale={variant === "configurator" ? (mobile ? 0.56 : 0.7) : (mobile ? 0.52 : 0.64)}
       dispose={null}
     >
       <BottomCase groupRef={bottom} dark={dark} />

@@ -64,7 +64,7 @@ export function StoryExperience() {
   return (
     <section ref={root} className="story-experience" aria-label="FORM 75 product story">
       <div className="story-sticky">
-        <KeyboardCanvas variant="story" label={t.a11y.scene} />
+        <KeyboardCanvas variant="story" label={t.a11y.scene} fallbackStage={activeStage} />
         <div className="surface-reflections" aria-hidden="true" />
         <div className="story-progress" aria-hidden="true">
           {[0, 1, 2, 3, 4, 5].map((stage) => <i key={stage} className={activeStage === stage ? "active" : ""} />)}

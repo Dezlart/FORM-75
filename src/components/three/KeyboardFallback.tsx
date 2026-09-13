@@ -1,49 +1,62 @@
 "use client";
 
-import type { CSSProperties } from "react";
 import { useConfiguratorStore } from "@/stores/configurator";
 
-const fallbackKeys = Array.from({ length: 75 }, (_, index) => index);
+const storyStages = [0, 1, 2, 3, 4, 5] as const;
 
-const caseColors = {
-  graphite: "#34373a",
-  silver: "#b9b8b2",
-  sand: "#9f8f7c",
-} as const;
+function StaticRender({ desktopFile, mobileFile, priority = false }: { desktopFile: string; mobileFile: string; priority?: boolean }) {
+  return (
+    <picture className="fallback-render">
+      <source media="(max-width: 760px)" srcSet={`/images/keyboard-fallbacks/${mobileFile}.webp`} />
+      <img
+        src={`/images/keyboard-fallbacks/${desktopFile}.webp`}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        loading={priority ? "eager" : "lazy"}
+        fetchPriority={priority ? "high" : "auto"}
+      />
+    </picture>
+  );
+}
 
-const keycapColors = {
-  obsidian: "#252729",
-  porcelain: "#eeece6",
-  ember: "#7d3530",
-} as const;
-
-const lightColors = {
-  neutral: "#f5ead6",
-  warm: "#ffb66e",
-  ice: "#a9dcff",
-} as const;
-
-export function KeyboardFallback({ variant, note, unavailable }: { variant: "story" | "configurator"; note: string; unavailable: boolean }) {
+export function KeyboardFallback({
+  variant,
+  note,
+  unavailable,
+  stage = 0,
+}: {
+  variant: "story" | "configurator";
+  note: string;
+  unavailable: boolean;
+  stage?: number;
+}) {
   const caseFinish = useConfiguratorStore((state) => state.caseFinish);
   const keycaps = useConfiguratorStore((state) => state.keycaps);
   const backlight = useConfiguratorStore((state) => state.backlight);
   const backlightPreset = useConfiguratorStore((state) => state.backlightPreset);
-  const style = {
-    "--fallback-case": caseColors[caseFinish],
-    "--fallback-keycaps": keycapColors[keycaps],
-    "--fallback-light": backlight ? lightColors[backlightPreset] : "transparent",
-  } as CSSProperties;
+  const currentStage = Math.max(0, Math.min(5, Math.round(stage)));
+  const configuratorState = `${caseFinish}-${keycaps}-${backlight ? backlightPreset : "off"}`;
 
   return (
-    <div className={`webgl-fallback webgl-fallback-${variant}`} style={style} data-testid={unavailable ? "webgl-fallback" : undefined}>
-      <div className="fallback-product" aria-hidden="true">
-        <div className="fallback-deck">
-          <div className="fallback-key-grid">
-            {fallbackKeys.map((key) => <i className="fallback-key" key={key} />)}
-          </div>
-          <span className="fallback-knob" />
+    <div
+      className={`webgl-fallback webgl-fallback-${variant}`}
+      data-testid={unavailable ? "webgl-fallback" : undefined}
+      aria-hidden={!unavailable}
+    >
+      {variant === "story" ? storyStages.map((storyStage) => (
+        <div
+          className={`fallback-stage${currentStage === storyStage ? " is-active" : ""}`}
+          key={storyStage}
+          data-fallback-stage={storyStage}
+        >
+          <StaticRender desktopFile={`story-desktop-${storyStage}`} mobileFile={`story-mobile-${storyStage}`} priority />
         </div>
-      </div>
+      )) : (
+        <div className="fallback-stage is-active">
+          <StaticRender desktopFile={`configurator-desktop-${configuratorState}`} mobileFile={`configurator-mobile-${configuratorState}`} priority />
+        </div>
+      )}
       {unavailable && <p className="webgl-fallback-note"><span>3D / FALLBACK</span>{note}</p>}
     </div>
   );

@@ -1,6 +1,28 @@
 import { expect, test } from "@playwright/test";
 import { expectCleanRuntime, monitorRuntime } from "./runtimeDiagnostics";
 
+async function dispatchTouchDrag(page: import("@playwright/test").Page, start: { x: number; y: number }, end: { x: number; y: number }) {
+  const client = await page.context().newCDPSession(page);
+  await client.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ ...start, id: 1, radiusX: 8, radiusY: 8, force: 1 }],
+  });
+  for (let step = 1; step <= 12; step += 1) {
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{
+        x: start.x + (end.x - start.x) * step / 12,
+        y: start.y + (end.y - start.y) * step / 12,
+        id: 1,
+        radiusX: 8,
+        radiusY: 8,
+        force: 1,
+      }],
+    });
+  }
+  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+}
+
 test("legacy Safari media-query APIs keep the WebGL fallback interactive", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-safari", "Legacy Safari regression runs on the iPhone WebKit project.");
   const diagnostics = monitorRuntime(page);
@@ -92,4 +114,44 @@ test("mobile starts at the top with the intended defaults, switch layout and loc
   await page.getByRole("button", { name: "Нажать переключатель" }).click();
 
   expectCleanRuntime(diagnostics);
+});
+
+test("the full mobile configurator surface rotates without scrolling the page", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile-chromium", "Chromium CDP supplies a real touch gesture for this regression.");
+  await page.goto("/?debug3d=1");
+  await page.waitForLoadState("domcontentloaded");
+  await page.waitForTimeout(700);
+  await page.locator("#configurator").evaluate((element) => window.scrollTo(0, (element as HTMLElement).offsetTop));
+
+  const configurator = page.locator(".canvas-configurator");
+  await expect(configurator).not.toHaveAttribute("data-webgl", "checking");
+  test.skip(await configurator.getAttribute("data-webgl") !== "available", "Hardware WebGL2 is unavailable in this browser.");
+  const canvas = configurator.locator("canvas");
+  await expect(canvas).toBeVisible();
+  await expect.poll(() => canvas.evaluate((element) => getComputedStyle(element).touchAction)).toBe("none");
+
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.height).toBeGreaterThanOrEqual(540);
+  const before = await page.evaluate(() => ({
+    scrollY: window.scrollY,
+    rotation: Number(document.querySelector<HTMLElement>(".canvas-configurator")?.dataset.configRotation ?? 0),
+  }));
+
+  // Start well away from the rendered keyboard to cover the enlarged hit area.
+  await dispatchTouchDrag(page, {
+    x: box!.x + box!.width * 0.12,
+    y: box!.y + box!.height * 0.3,
+  }, {
+    x: box!.x + box!.width * 0.34,
+    y: box!.y + box!.height * 0.68,
+  });
+  await page.waitForTimeout(250);
+  const after = await page.evaluate(() => ({
+    scrollY: window.scrollY,
+    rotation: Number(document.querySelector<HTMLElement>(".canvas-configurator")?.dataset.configRotation ?? 0),
+  }));
+
+  expect(after.scrollY).toBeCloseTo(before.scrollY, 0);
+  expect(Math.abs(after.rotation - before.rotation)).toBeGreaterThan(0.1);
 });

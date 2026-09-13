@@ -95,19 +95,21 @@ button { color: inherit; }
 
 .story-experience { position: relative; background: var(--bg); }
 .story-sticky { position: sticky; top: 0; height: 100svh; z-index: 0; overflow: hidden; background: var(--bg); }
-.canvas-shell { width: 100%; height: 100%; }
+.canvas-shell { position: relative; width: 100%; height: 100%; }
 .canvas-story, .webgl-fallback { pointer-events: none; }
 .canvas-configurator { pointer-events: auto; }
+.canvas-live { position: absolute; inset: 0; z-index: 1; opacity: 0; transition: opacity 220ms ease; }
+.canvas-live.is-ready { opacity: 1; }
 .canvas-shell canvas { display: block; touch-action: none; }
-.webgl-fallback { position: relative; width: 100%; height: 100%; overflow: hidden; background: radial-gradient(circle at 52% 44%, color-mix(in srgb, var(--fallback-light) 12%, transparent), transparent 34%), linear-gradient(145deg, var(--bg) 10%, var(--bg-elevated)); }
-.fallback-product { position: absolute; inset: 8% 2% 4%; display: grid; place-items: center; perspective: 1400px; }
-.fallback-deck { position: relative; width: min(78vw, 1050px); aspect-ratio: 3.25 / 1; padding: 4.5% 4.8%; border: 1px solid color-mix(in srgb, var(--fallback-case) 72%, var(--text)); border-radius: clamp(15px, 2.3vw, 34px); background: linear-gradient(155deg, color-mix(in srgb, var(--fallback-case) 78%, white), var(--fallback-case) 62%, color-mix(in srgb, var(--fallback-case) 74%, black)); box-shadow: 0 10px 0 color-mix(in srgb, var(--fallback-case) 68%, black), 0 32px 80px color-mix(in srgb, var(--text) 22%, transparent), 0 0 50px color-mix(in srgb, var(--fallback-light) 24%, transparent); transform: rotateX(57deg) rotateZ(-9deg); transform-style: preserve-3d; }
-.fallback-key-grid { width: 100%; height: 100%; display: grid; grid-template-columns: repeat(15, minmax(0, 1fr)); grid-template-rows: repeat(5, minmax(0, 1fr)); gap: clamp(2px, .38vw, 6px); }
-.fallback-key { min-width: 0; min-height: 0; border: 1px solid color-mix(in srgb, var(--fallback-keycaps) 76%, var(--text)); border-radius: clamp(3px, .4vw, 7px); background: linear-gradient(150deg, color-mix(in srgb, var(--fallback-keycaps) 82%, white), var(--fallback-keycaps)); box-shadow: 0 3px 0 color-mix(in srgb, var(--fallback-keycaps) 72%, black), 0 0 8px color-mix(in srgb, var(--fallback-light) 42%, transparent); }
-.fallback-key:nth-child(15n), .fallback-key:nth-child(44), .fallback-key:nth-child(73) { background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 72%, white), var(--accent)); border-color: color-mix(in srgb, var(--accent) 70%, var(--text)); }
-.fallback-knob { position: absolute; top: 5.2%; right: 4.5%; width: 5.2%; aspect-ratio: 1; border: 1px solid color-mix(in srgb, var(--fallback-case) 62%, white); border-radius: 50%; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--fallback-case) 52%, white), color-mix(in srgb, var(--fallback-case) 78%, black)); box-shadow: 0 3px 0 color-mix(in srgb, var(--fallback-case) 68%, black); transform: translateZ(8px); }
-.webgl-fallback-configurator .fallback-deck { width: min(88%, 900px); transform: rotateX(58deg) rotateZ(-7deg); }
-.webgl-fallback-note { position: absolute; right: clamp(20px, 3vw, 54px); bottom: clamp(28px, 5vh, 58px); width: min(290px, calc(100% - 40px)); margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; letter-spacing: .01em; }
+.canvas-configurator canvas { cursor: grab; overscroll-behavior: contain; }
+.canvas-configurator canvas:active { cursor: grabbing; }
+.webgl-fallback { position: absolute; inset: 0; z-index: 0; overflow: hidden; opacity: 1; transition: opacity 220ms ease; }
+.canvas-shell[data-canvas-ready="true"] .webgl-fallback { opacity: 0; }
+.fallback-stage, .fallback-render { position: absolute; inset: 0; width: 100%; height: 100%; }
+.fallback-stage { opacity: 0; transition: opacity 220ms ease; }
+.fallback-stage.is-active { opacity: 1; }
+.fallback-render img { position: absolute; top: 0; bottom: 0; left: 50%; display: block; width: auto; max-width: none; height: 100%; transform: translateX(-50%); user-select: none; }
+.webgl-fallback-note { position: absolute; z-index: 2; right: clamp(20px, 3vw, 54px); bottom: clamp(28px, 5vh, 58px); width: min(290px, calc(100% - 40px)); margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; letter-spacing: .01em; }
 .webgl-fallback-note span { display: block; margin-bottom: 7px; color: var(--text); font-size: 9px; font-weight: 700; letter-spacing: .14em; }
 .story-track { position: relative; z-index: 2; margin-top: -100svh; pointer-events: none; }
 .story-panel { height: 100svh; min-height: 640px; padding: 110px clamp(24px, 7vw, 134px) 60px; display: flex; position: relative; align-items: center; }
@@ -304,8 +306,8 @@ button { color: inherit; }
   .battery-statement div { min-height: 90px; padding: 16px 0; border-bottom: 1px solid var(--line); }
   .battery-statement strong { font-size: 29px; }
   .configurator-section { display: block; min-height: auto; }
-  .configurator-visual { position: relative; height: 66svh; min-height: 500px; }
-  .canvas-configurator canvas { touch-action: pan-y; }
+  .configurator-visual { position: relative; height: clamp(540px, 72svh, 680px); }
+  .canvas-configurator canvas { touch-action: none; }
   .configurator-controls { padding: 76px 20px 90px; border-left: 0; border-top: 1px solid var(--line); }
   .configurator-controls h2 { font-size: 52px; }
   .option { min-height: 44px; }
@@ -319,10 +321,6 @@ button { color: inherit; }
   .assistant-trigger span { display: none; }
   .assistant-panel { inset: 8px; width: auto; height: auto; bottom: max(8px, env(safe-area-inset-bottom)); border-radius: 14px; }
   .assistant-panel > header { min-height: 70px; }
-  .fallback-product { inset: 13% -34% 10%; }
-  .fallback-deck { width: 145vw; transform: rotateX(58deg) rotateZ(-8deg); }
-  .webgl-fallback-configurator .fallback-product { inset: 5% -20% 16%; }
-  .webgl-fallback-configurator .fallback-deck { width: 125vw; }
   .webgl-fallback-note { right: auto; left: 20px; bottom: 76px; max-width: 255px; }
 }
 

@@ -12,7 +12,7 @@ import { KeyboardModel } from "./KeyboardModel";
 import { KeyboardFallback } from "./KeyboardFallback";
 import { SwitchModel } from "./SwitchModel";
 import { useLocale } from "@/components/providers/LocaleProvider";
-import { advanceStoryMotion, isSceneDebugEnabled, registerSceneInvalidator, requestSceneFrames, storyProgress, storyTargetProgress, smoothstep } from "@/lib/storyProgress";
+import { advanceStoryMotion, getStorySwitchStage, isSceneDebugEnabled, registerSceneInvalidator, requestSceneFrames, storyProgress, storyTargetProgress, smoothstep } from "@/lib/storyProgress";
 
 type CanvasVariant = "story" | "configurator";
 type WebGLState = "checking" | "available" | "unavailable";
@@ -71,7 +71,9 @@ function StoryCamera({ mobile }: { mobile: boolean }) {
     const progress = storyProgress.current;
     const design = smoothstep(0.08, 0.26, progress);
     const exploded = smoothstep(0.27, 0.58, progress);
-    const switchStage = smoothstep(0.68, 0.76, progress) * (1 - smoothstep(0.91, 0.98, progress));
+    // Reframe only after the keyboard has begun its straight retreat. This
+    // keeps the end of the Inside scene free of a sideways camera tug.
+    const switchStage = getStorySwitchStage(progress);
     const returnHome = smoothstep(0.91, 0.99, progress);
     if (mobile) heroPosition.current.set(5, 7.8, 13.5);
     else heroPosition.current.set(8.2, 6.3, 11);
@@ -151,7 +153,7 @@ function StoryProgressController() {
   return null;
 }
 
-function ConfiguratorControls({ mobile }: { mobile: boolean }) {
+function ConfiguratorControls() {
   const controls = useRef<OrbitControlsImpl>(null);
   const { gl } = useThree();
   const previousAzimuth = useRef<number | null>(null);
@@ -162,14 +164,15 @@ function ConfiguratorControls({ mobile }: { mobile: boolean }) {
     const controlSurface = controls.current?.domElement ?? canvas;
     const canvasTouchAction = canvas.style.touchAction;
     const controlTouchAction = controlSurface.style.touchAction;
-    const touchAction = mobile ? "pan-y" : "none";
-    canvas.style.touchAction = touchAction;
-    controlSurface.style.touchAction = touchAction;
+    // The whole configurator canvas is the manipulation surface. Allowing
+    // pan-y made diagonal finger drags scroll the document and cancel orbiting.
+    canvas.style.touchAction = "none";
+    controlSurface.style.touchAction = "none";
     return () => {
       canvas.style.touchAction = canvasTouchAction;
       controlSurface.style.touchAction = controlTouchAction;
     };
-  }, [gl, mobile]);
+  }, [gl]);
 
   const recordRotation = () => {
     const instance = controls.current;
@@ -193,8 +196,7 @@ function ConfiguratorControls({ mobile }: { mobile: boolean }) {
   return (
     <OrbitControls
       ref={controls}
-      // Keep the input surface stable: Drei's late events.connected change can
-      // reconnect controls to a parent with touch-action:none, blocking pan-y.
+      // Keep the input surface stable if Drei updates events.connected later.
       domElement={gl.domElement}
       enablePan={false}
       enableZoom={false}
@@ -353,6 +355,18 @@ function RenderScheduler({ active, variant }: { active: boolean; variant: Canvas
   return null;
 }
 
+function FirstFrameReporter({ onReady }: { onReady: () => void }) {
+  const reported = useRef(false);
+  const animationFrame = useRef(0);
+  useEffect(() => () => window.cancelAnimationFrame(animationFrame.current), []);
+  useFrame(() => {
+    if (reported.current) return;
+    reported.current = true;
+    animationFrame.current = window.requestAnimationFrame(onReady);
+  });
+  return null;
+}
+
 function ShadowFloor({ dark, story }: { dark: boolean; story: boolean }) {
   const material = useRef<ShadowMaterial>(null);
   useFrame(() => {
@@ -392,7 +406,7 @@ function StudioLighting({ dark, story, active, mobile }: { dark: boolean; story:
   );
 }
 
-function Scene({ variant, dark, active, mobile }: { variant: CanvasVariant; dark: boolean; active: boolean; mobile: boolean }) {
+function Scene({ variant, dark, active, mobile, onReady }: { variant: CanvasVariant; dark: boolean; active: boolean; mobile: boolean; onReady: () => void }) {
   return (
     <>
       <fog attach="fog" args={["#b8b8b5", 21, 34]} />
@@ -401,22 +415,24 @@ function Scene({ variant, dark, active, mobile }: { variant: CanvasVariant; dark
       {process.env.NODE_ENV !== "production" && <PerformanceProbe />}
       <AdaptiveQuality mobile={mobile} />
       <RenderScheduler active={active} variant={variant} />
+      <FirstFrameReporter onReady={onReady} />
       <StudioLighting dark={dark} story={variant === "story"} active={active} mobile={mobile} />
       <KeyboardModel variant={variant} dark={dark} mobile={mobile} />
       {variant === "story" && <><SwitchModel mobile={mobile} /><StoryCamera mobile={mobile} /></>}
-      {variant === "configurator" && <ConfiguratorControls mobile={mobile} />}
+      {variant === "configurator" && <ConfiguratorControls />}
       {active && <ShadowFloor dark={dark} story={variant === "story"} />}
     </>
   );
 }
 
-export function KeyboardCanvas({ variant, label }: { variant: CanvasVariant; label: string }) {
+export function KeyboardCanvas({ variant, label, fallbackStage = 0 }: { variant: CanvasVariant; label: string; fallbackStage?: number }) {
   const { resolvedTheme } = useTheme();
   const { dictionary: t } = useLocale();
   const shell = useRef<HTMLDivElement>(null);
   const [mobile, setMobile] = useState(false);
   const [active, setActive] = useState(variant === "story");
   const [webGLState, setWebGLState] = useState<WebGLState>("checking");
+  const [canvasReady, setCanvasReady] = useState(false);
   const intentionallyInactive = useRef(variant !== "story");
   useEffect(() => {
     const timeout = window.setTimeout(() => setWebGLState(supportsWebGL2() ? "available" : "unavailable"), 0);
@@ -444,12 +460,14 @@ export function KeyboardCanvas({ variant, label }: { variant: CanvasVariant; lab
     if (typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(([entry]) => {
       intentionallyInactive.current = !entry.isIntersecting;
+      if (!entry.isIntersecting) setCanvasReady(false);
       setActive(entry.isIntersecting);
     }, { rootMargin: variant === "configurator" ? "100% 0px" : "35% 0px", threshold: 0 });
     observer.observe(element);
     return () => observer.disconnect();
   }, [variant]);
-  const dark = resolvedTheme === "dark";
+  const captureLighting = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("captureLighting") === "dark";
+  const dark = resolvedTheme === "dark" || captureLighting;
   const unavailable = webGLState === "unavailable";
   const render3D = webGLState === "available" && active;
 
@@ -460,33 +478,36 @@ export function KeyboardCanvas({ variant, label }: { variant: CanvasVariant; lab
       role="img"
       aria-label={unavailable ? `${label}. ${t.a11y.webglFallback}` : label}
       data-webgl={webGLState}
+      data-canvas-ready={canvasReady}
       onPointerDown={() => variant === "configurator" && requestSceneFrames("configurator", 1200)}
       onPointerUp={() => variant === "configurator" && requestSceneFrames("configurator", 650)}
     >
-      {!render3D ? (
-        <KeyboardFallback variant={variant} note={t.a11y.webglFallback} unavailable={unavailable} />
-      ) : (
+      <KeyboardFallback variant={variant} note={t.a11y.webglFallback} unavailable={unavailable} stage={fallbackStage} />
+      {render3D && (
         <WebGLBoundary
-          fallback={<KeyboardFallback variant={variant} note={t.a11y.webglFallback} unavailable />}
+          fallback={null}
           onFailure={() => setWebGLState("unavailable")}
         >
-          <Canvas
-            camera={{ position: variant === "story" ? (mobile ? [5, 7.8, 13.5] : [8.2, 6.3, 11]) : (mobile ? [5.4, 6.2, 10.5] : [5.9, 5.3, 8.5]), fov: mobile ? 46 : 35, near: 0.1, far: 60 }}
-            dpr={mobile ? [0.82, 1] : [0.9, 1.2]}
-            gl={{ antialias: true, alpha: true, powerPreference: "default", failIfMajorPerformanceCaveat: true }}
-            shadows={!mobile ? "soft" : false}
-            frameloop="demand"
-            performance={{ min: 0.55 }}
-            onCreated={({ gl }) => {
-              gl.domElement.addEventListener("webglcontextlost", (event) => {
-                if (intentionallyInactive.current) return;
-                event.preventDefault();
-                setWebGLState("unavailable");
-              }, { once: true });
-            }}
-          >
-            <Scene variant={variant} dark={dark} active={active} mobile={mobile} />
-          </Canvas>
+          <div className={`canvas-live${canvasReady ? " is-ready" : ""}`}>
+            <Canvas
+              camera={{ position: variant === "story" ? (mobile ? [5, 7.8, 13.5] : [8.2, 6.3, 11]) : (mobile ? [5.4, 6.2, 10.5] : [5.9, 5.3, 8.5]), fov: mobile ? 46 : 35, near: 0.1, far: 60 }}
+              dpr={mobile ? [0.82, 1] : [0.9, 1.2]}
+              gl={{ antialias: true, alpha: true, powerPreference: "default", failIfMajorPerformanceCaveat: true }}
+              shadows={!mobile ? "soft" : false}
+              frameloop="demand"
+              performance={{ min: 0.55 }}
+              onCreated={({ gl }) => {
+                gl.domElement.addEventListener("webglcontextlost", (event) => {
+                  if (intentionallyInactive.current) return;
+                  event.preventDefault();
+                  setCanvasReady(false);
+                  setWebGLState("unavailable");
+                }, { once: true });
+              }}
+            >
+              <Scene variant={variant} dark={dark} active={active} mobile={mobile} onReady={() => setCanvasReady(true)} />
+            </Canvas>
+          </div>
         </WebGLBoundary>
       )}
     </div>

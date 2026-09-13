@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { advanceStoryMotion, type StoryMotion } from "../../src/lib/storyProgress";
+import { advanceStoryMotion, getStoryKeyboardPose, getStorySwitchStage, type StoryMotion } from "../../src/lib/storyProgress";
 import { expectCleanRuntime, monitorRuntime, type RuntimeDiagnostics } from "./runtimeDiagnostics";
 
 interface StoryFrame {
@@ -63,6 +63,27 @@ test("story reversal preserves velocity and settles only after motion stops", ()
   const crossing: StoryMotion = { progress: 0.4, velocity: 0.2 };
   expect(advanceStoryMotion(crossing, 0.4, 0)).toBe(true);
   expect(crossing.velocity).toBe(0.2);
+});
+
+test("the Inside composition holds its line while the keyboard retreats", () => {
+  for (const mobile of [false, true]) {
+    const insidePose = getStoryKeyboardPose(0.57, mobile);
+    const exitSamples = [0.62, 0.66, 0.68, 0.7, 0.72, 0.74].map((progress) => (
+      getStoryKeyboardPose(progress, mobile)
+    ));
+
+    for (const pose of exitSamples) {
+      expect(pose.x).toBeCloseTo(insidePose.x, 10);
+      expect(pose.y).toBeCloseTo(insidePose.y, 10);
+    }
+    for (let index = 1; index < exitSamples.length; index += 1) {
+      expect(exitSamples[index].z).toBeLessThanOrEqual(exitSamples[index - 1].z);
+    }
+  }
+
+  expect(getStoryKeyboardPose(0.72, false).retreat).toBeGreaterThan(0.45);
+  expect(getStorySwitchStage(0.72)).toBe(0);
+  expect(getStoryKeyboardPose(0.74, false).visible).toBe(false);
 });
 
 async function startProbe(page: Page) {

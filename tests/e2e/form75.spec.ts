@@ -65,7 +65,7 @@ test("locale and localized chat trigger work with the fixed site theme", async (
   await expect(page.locator("html")).toHaveClass(/light/);
 });
 
-test("falls back cleanly when WebGL2 cannot be created", async ({ page }) => {
+test("falls back cleanly when WebGL2 cannot be created", async ({ page }, testInfo) => {
   await page.addInitScript(() => {
     const originalGetContext = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, contextId: string, ...args: unknown[]) {
@@ -77,6 +77,28 @@ test("falls back cleanly when WebGL2 cannot be created", async ({ page }) => {
   await expect(page.getByTestId("webgl-fallback").first()).toBeVisible();
   await expect(page.getByText(/Статичная модель показана/).first()).toBeVisible();
   await expect(page.locator(".canvas-shell canvas")).toHaveCount(0);
+  const activeStoryRender = page.locator(".canvas-story .fallback-stage.is-active");
+  await expect(activeStoryRender).toHaveAttribute("data-fallback-stage", "0");
+  await expect(activeStoryRender.locator("img")).toHaveJSProperty("complete", true);
+  expect(await activeStoryRender.locator("img").evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(300);
+
+  await page.locator("#inside").evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
+  await expect(activeStoryRender).toHaveAttribute("data-fallback-stage", "3");
+  await page.locator("#switches").evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
+  await expect(activeStoryRender).toHaveAttribute("data-fallback-stage", "4");
+
+  await page.locator("#configurator").evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
+  const configuratorRender = page.locator(".canvas-configurator .fallback-stage.is-active img");
+  await expect(configuratorRender).toBeVisible();
+  expect(await configuratorRender.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(300);
+  const target = testInfo.project.name.startsWith("mobile") ? "mobile" : "desktop";
+  await expect.poll(() => configuratorRender.evaluate((image) => (image as HTMLImageElement).currentSrc)).toContain(`configurator-${target}-silver-porcelain-neutral.webp`);
+  await domClick(page, '[data-testid="finish-graphite"]');
+  await domClick(page, '[data-testid="keycaps-obsidian"]');
+  await domClick(page, '[data-testid="light-warm"]');
+  await expect.poll(() => configuratorRender.evaluate((image) => (image as HTMLImageElement).currentSrc)).toContain(`configurator-${target}-graphite-obsidian-warm.webp`);
+  await domClick(page, '[data-testid="backlight-toggle"]');
+  await expect.poll(() => configuratorRender.evaluate((image) => (image as HTMLImageElement).currentSrc)).toContain(`configurator-${target}-graphite-obsidian-off.webp`);
   await page.getByRole("button", { name: "Сменить язык" }).evaluate((element) => (element as HTMLButtonElement).click());
   await expect(page.getByText("Precision in every press.")).toBeVisible();
 });

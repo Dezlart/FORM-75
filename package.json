@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
+    "capture:fallbacks": "node scripts/capture-static-fallbacks.mjs",
     "pretest:e2e": "npm run build",
     "test:e2e": "node scripts/run-e2e.mjs",
     "playwright:install": "cross-env PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers playwright install chromium webkit"

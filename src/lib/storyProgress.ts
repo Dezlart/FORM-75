@@ -54,9 +54,52 @@ export const smoothstep = (min: number, max: number, value: number) => {
   return x * x * (3 - 2 * x);
 };
 
+export const getStorySwitchStage = (progress: number) => (
+  smoothstep(0.72, 0.8, progress) * (1 - smoothstep(0.91, 0.98, progress))
+);
+
+export const getStoryKeyboardRetreat = (progress: number) => (
+  smoothstep(0.66, 0.74, progress) * (1 - smoothstep(0.91, 0.98, progress))
+);
+
+export function getStoryKeyboardPose(progress: number, mobile: boolean) {
+  const explodeIn = smoothstep(0.27, 0.48, progress);
+  const reassemble = smoothstep(0.9, 0.99, progress);
+  const exploded = explodeIn * (1 - reassemble);
+  const architecture = smoothstep(0.29, 0.38, progress) * (1 - smoothstep(0.48, 0.57, progress));
+  const inside = smoothstep(0.48, 0.57, progress) * (1 - smoothstep(0.91, 0.98, progress));
+  const design = smoothstep(0.1, 0.18, progress) * (1 - smoothstep(0.27, 0.32, progress));
+  const hero = 1 - smoothstep(0.08, 0.16, progress);
+  const reassembly = smoothstep(0.94, 0.995, progress);
+  const retreat = getStoryKeyboardRetreat(progress);
+  const baseX = mobile ? 0.1 : 5.2;
+  const baseY = mobile ? -1.35 : -0.62;
+  const baseScale = mobile ? 0.52 : 0.64;
+
+  return {
+    architecture,
+    exploded,
+    inside,
+    retreat,
+    x: baseX
+      + architecture * (mobile ? 0.15 : -3.8)
+      + inside * (mobile ? 0.08 : 1.65)
+      + design * (mobile ? 0 : 0.35)
+      + reassembly * (mobile ? 0 : 0.45),
+    y: baseY - exploded * 0.72 + (
+      mobile
+        ? architecture * 1.2 + inside * 3.3 + design * 0.22 + reassembly * 0.3 - hero * 0.8
+        : reassembly * -0.12
+    ),
+    z: -42 * retreat,
+    scale: baseScale * (1 - architecture * 0.07),
+    visible: retreat < 0.94,
+  };
+}
+
 export const getStoryLightingIntensity = (progress: number) => {
   const hero = 1 - smoothstep(0.22, 0.31, progress);
-  const exposedSwitches = 0.55 * smoothstep(0.26, 0.36, progress) * (1 - smoothstep(0.68, 0.76, progress));
+  const exposedSwitches = 0.55 * smoothstep(0.26, 0.36, progress) * (1 - getStoryKeyboardRetreat(progress));
   const reassembled = smoothstep(0.955, 0.995, progress);
   return Math.max(hero, exposedSwitches, reassembled);
 };
