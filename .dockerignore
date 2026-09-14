@@ -6,7 +6,10 @@ node_modules
 playwright-report
 test-results
 .env
-.env.local
-.env.*.local
+.env.*
+.qa
+.playwright-mcp
+tsconfig.tsbuildinfo
+next-env.d.ts
 *.log
 README.md

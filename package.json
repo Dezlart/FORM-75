@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "postbuild": "node scripts/prepare-standalone.mjs",
-    "start": "next start",
+    "start": "node .next/standalone/server.js",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "capture:fallbacks": "node scripts/capture-static-fallbacks.mjs",
@@ -17,14 +17,10 @@
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
     "@google/genai": "^2.16.0",
-    "@gsap/react": "^2.1.2",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
-    "gsap": "^3.15.0",
     "lucide-react": "^1.31.0",
-    "next": "^16.3.0",
-    "next-themes": "^0.4.6",
-    "playwright": "^1.63.0",
+    "next": "~16.3.5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "three": "^0.180.0",
@@ -32,7 +28,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
@@ -40,8 +36,13 @@
     "@types/three": "^0.180.0",
     "cross-env": "^10.1.0",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.3.0",
+    "eslint-config-next": "~16.3.5",
+    "playwright": "1.63.0",
+    "sharp": "^0.35.4",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=22.14.0"
   }
 }

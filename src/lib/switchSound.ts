@@ -62,19 +62,23 @@ function preloadAudioBuffer(variant: SwitchVariant) {
   return promise;
 }
 
+function createFallbackVoice(variant: SwitchVariant) {
+  const { volume } = switchSounds[variant];
+  const audio = new Audio();
+  audio.src = switchSounds[variant].path;
+  audio.preload = "auto";
+  audio.volume = volume;
+  return audio;
+}
+
 function getFallbackPool(variant: SwitchVariant) {
   if (typeof window === "undefined" || typeof Audio === "undefined") return [];
   const cached = fallbackPools.get(variant);
   if (cached) return cached;
 
-  const { volume } = switchSounds[variant];
-  const pool = Array.from({ length: maximumVoices }, () => {
-    const audio = new Audio();
-    audio.src = switchSounds[variant].path;
-    audio.preload = "auto";
-    audio.volume = volume;
-    return audio;
-  });
+  // One warm fallback is enough for the first gesture; allocate overlapping
+  // voices only if playback actually needs them before Web Audio is ready.
+  const pool = [createFallbackVoice(variant)];
   fallbackPools.set(variant, pool);
   fallbackIndices.set(variant, 0);
   return pool;
@@ -83,7 +87,11 @@ function getFallbackPool(variant: SwitchVariant) {
 function playFallback(variant: SwitchVariant) {
   const pool = getFallbackPool(variant);
   if (pool.length === 0) return;
-  const available = pool.find((audio) => audio.paused || audio.ended);
+  let available = pool.find((audio) => audio.paused || audio.ended);
+  if (!available && pool.length < maximumVoices) {
+    available = createFallbackVoice(variant);
+    pool.push(available);
+  }
   const index = fallbackIndices.get(variant) ?? 0;
   const audio = available ?? pool[index % pool.length];
   fallbackIndices.set(variant, (index + 1) % pool.length);

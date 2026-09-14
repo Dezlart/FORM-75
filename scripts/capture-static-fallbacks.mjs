@@ -51,7 +51,7 @@ async function setBacklight(page, lighting) {
 }
 
 await mkdir(outputDirectory, { recursive: true });
-const browser = await chromium.launch({ channel: "chrome", headless: false });
+const browser = await chromium.launch({ channel: "chrome", headless: true });
 
 try {
   for (const target of targets) {
@@ -61,10 +61,9 @@ try {
       isMobile: target.name === "mobile",
       hasTouch: target.name === "mobile",
       reducedMotion: "reduce",
-      colorScheme: "light",
     });
     const page = await context.newPage();
-    await page.goto(`${baseUrl}?captureLighting=dark`, { waitUntil: "networkidle" });
+    await page.goto(`${baseUrl}?debug3d=1`, { waitUntil: "networkidle" });
     await page.locator(".canvas-story canvas").waitFor({ state: "visible" });
     await page.waitForFunction(() => document.querySelector(".canvas-story")?.getAttribute("data-canvas-ready") === "true");
     await page.addStyleTag({ content: `

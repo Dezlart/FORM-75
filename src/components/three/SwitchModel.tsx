@@ -68,8 +68,11 @@ function fitSwitchToViewport(group: Group, camera: Camera, mobile: boolean, visi
 export function SwitchModel({ mobile }: { mobile: boolean }) {
   const root = useRef<Group>(null);
   const stem = useRef<Group>(null);
-  const { camera, gl, invalidate } = useThree();
+  const { camera, gl, invalidate, size } = useThree();
   const composition = useRef({ anchor: new Vector3(), ray: new Vector3(), centerOffset: new Vector3(), corner: new Vector3(), centerY: 0.52 });
+  const previousFit = useRef({ progress: NaN, width: 0, height: 0, centerY: 0, mobile });
+  const canvasShell = useRef<HTMLElement | null>(null);
+  const interactive = useRef<boolean | null>(null);
   const motion = useRef(createSwitchMotion(useConfiguratorStore.getState().switchPressSequence));
   const reducedMotion = useRef(false);
   const debug = useRef(isSceneDebugEnabled());
@@ -100,6 +103,7 @@ export function SwitchModel({ mobile }: { mobile: boolean }) {
   useEffect(() => {
     const canvas = gl.domElement;
     const shell = canvas.closest<HTMLElement>(".canvas-story");
+    canvasShell.current = shell;
     const touchAction = canvas.style.touchAction;
     const pointerEvents = shell?.style.pointerEvents ?? "";
     const cursor = canvas.style.cursor;
@@ -108,6 +112,7 @@ export function SwitchModel({ mobile }: { mobile: boolean }) {
       canvas.style.touchAction = touchAction;
       canvas.style.cursor = cursor;
       if (shell) shell.style.pointerEvents = pointerEvents;
+      canvasShell.current = null;
     };
   }, [gl]);
 
@@ -124,14 +129,26 @@ export function SwitchModel({ mobile }: { mobile: boolean }) {
     const progress = storyProgress.current;
     const visible = getStorySwitchStage(progress);
     root.current.visible = visible > 0.01;
-    if (root.current.visible) fitSwitchToViewport(root.current, camera, mobile, visible, composition.current);
+    const fit = previousFit.current;
+    if (root.current.visible && (fit.progress !== progress || fit.width !== size.width || fit.height !== size.height || fit.centerY !== composition.current.centerY || fit.mobile !== mobile)) {
+      fitSwitchToViewport(root.current, camera, mobile, visible, composition.current);
+      fit.progress = progress;
+      fit.width = size.width;
+      fit.height = size.height;
+      fit.centerY = composition.current.centerY;
+      fit.mobile = mobile;
+    }
     const { switchPressed, switchPressSequence } = useConfiguratorStore.getState();
     const stroke = advanceSwitchMotion(motion.current, switchPressSequence, switchPressed, delta, reducedMotion.current);
     stem.current.position.y = MathUtils.lerp(0.48, 0.13, stroke.travel);
-    const shell = gl.domElement.closest<HTMLElement>(".canvas-story");
+    const shell = canvasShell.current;
     if (shell) {
-      shell.style.pointerEvents = visible > 0.5 ? "auto" : "none";
-      if (visible <= 0.5) gl.domElement.style.cursor = "";
+      const enabled = visible > 0.5;
+      if (interactive.current !== enabled) {
+        interactive.current = enabled;
+        shell.style.pointerEvents = enabled ? "auto" : "none";
+        if (!enabled) gl.domElement.style.cursor = "";
+      }
       if (debug.current) {
         shell.dataset.switchTravel = stroke.travel.toFixed(4);
         shell.dataset.switchPressed = String(switchPressed);
@@ -147,6 +164,11 @@ export function SwitchModel({ mobile }: { mobile: boolean }) {
       ref={root}
       visible={false}
       rotation={[-0.14, -0.28, 0]}
+    >
+      {/* One invisible interaction volume avoids raycasting every rounded face
+          on each pointer movement; the visible switch remains unchanged. */}
+      <mesh
+      position={[0, -0.1, 0]}
       onPointerDown={(event) => {
         event.stopPropagation();
         if (event.button !== 0 || !pressPointer(event.pointerId)) return;
@@ -158,7 +180,10 @@ export function SwitchModel({ mobile }: { mobile: boolean }) {
       onLostPointerCapture={(event) => releasePointer(event.pointerId)}
       onPointerOver={() => { gl.domElement.style.cursor = "pointer"; }}
       onPointerOut={() => { gl.domElement.style.cursor = ""; }}
-    >
+      >
+        <boxGeometry args={[2.68, 2.18, 2.48]} />
+        <meshBasicMaterial visible={false} />
+      </mesh>
       <RoundedBox args={[2.48, 0.66, 2.48]} radius={0.16} smoothness={5} position={[0, -0.3, 0]} castShadow>
         {mobile
           ? <meshStandardMaterial color="#ddd8cf" roughness={0.37} transparent opacity={0.97} envMapIntensity={1.1} />

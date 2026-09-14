@@ -1,11 +1,21 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+import { createServer } from "node:net";
 
 const root = process.cwd();
+const port = process.env.PLAYWRIGHT_PORT ?? "3101";
+const baseURL = `http://127.0.0.1:${port}`;
+// Never accidentally verify an unrelated dev server already using this port.
+await new Promise((resolve, reject) => {
+  const probe = createServer();
+  probe.once("error", reject);
+  probe.listen(Number(port), "127.0.0.1", () => probe.close(resolve));
+});
 const env = {
   ...process.env,
   HOSTNAME: "127.0.0.1",
-  PORT: "3000",
+  PORT: port,
+  PLAYWRIGHT_PORT: port,
   PLAYWRIGHT_EXTERNAL_SERVER: "1",
   PLAYWRIGHT_BROWSERS_PATH: join(root, ".playwright-browsers"),
 };
@@ -17,7 +27,7 @@ async function waitForServer() {
   while (Date.now() < deadline) {
     if (server.exitCode !== null) throw new Error(`FORM 75 server exited with code ${server.exitCode}`);
     try {
-      const response = await fetch("http://127.0.0.1:3000", { signal: AbortSignal.timeout(1_000) });
+      const response = await fetch(baseURL, { signal: AbortSignal.timeout(1_000) });
       if (response.ok) return;
     } catch {
       // The server is still starting.

@@ -45,7 +45,7 @@ export function WheelScroll() {
       const settled = Math.abs(target - position) < 0.5;
       if (settled) position = target;
       // Write the real document offset so sticky sections, anchors, and the
-      // existing ScrollTrigger / R3F pipeline share the same scroll position.
+      // existing story / R3F pipeline share the same scroll position.
       window.scrollTo({ top: position, behavior: "instant" });
       writtenPosition = window.scrollY;
       frame = settled ? 0 : window.requestAnimationFrame(animate);
@@ -62,8 +62,8 @@ export function WheelScroll() {
       }
 
       // WheelEvent deltas can be pixels, text lines, or pages.
-      const lineHeight = Number.parseFloat(getComputedStyle(document.documentElement).lineHeight) || 16;
-      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? lineHeight
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? Number.parseFloat(getComputedStyle(document.documentElement).lineHeight) || 16
         : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? window.innerHeight : 1;
       const movement = event.deltaY * unit;
       const limit = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);

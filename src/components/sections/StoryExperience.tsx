@@ -1,8 +1,5 @@
 "use client";
 
-import { useGSAP } from "@gsap/react";
-import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useEffect, useRef, useState } from "react";
 import { KeyboardCanvas } from "@/components/three/KeyboardCanvas";
 import { useLocale } from "@/components/providers/LocaleProvider";
@@ -12,26 +9,21 @@ import { useSwitchPress } from "@/lib/useSwitchPress";
 import { useConfiguratorStore } from "@/stores/configurator";
 import type { SwitchVariant } from "@/types/product";
 
-gsap.registerPlugin(ScrollTrigger, useGSAP);
-
 export function StoryExperience() {
   const root = useRef<HTMLElement>(null);
   const [activeStage, setActiveStage] = useState(0);
   const { dictionary: t } = useLocale();
-  const switchType = useConfiguratorStore((state) => state.switchType);
-  const setSwitchType = useConfiguratorStore((state) => state.setSwitchType);
-  const { pressButtonHandlers } = useSwitchPress();
-
   useEffect(() => {
-    preloadSwitchClick();
-  }, []);
-
-  useGSAP(() => {
+    const section = root.current;
+    if (!section) return;
+    let start = 0;
+    let distance = 1;
     let currentStage = -1;
-    const updateProgress = (self: ScrollTrigger) => {
-      // ScrollTrigger measures the section; native scroll supplies the target
-      // immediately, independently of GSAP's ticker and wheel-event cadence.
-      const progress = Math.min(1, Math.max(0, (window.scrollY - self.start) / Math.max(1, self.end - self.start)));
+    let measureFrame = 0;
+    let disposed = false;
+    const updateProgress = () => {
+      // Read cached geometry during scroll; measuring belongs to layout changes.
+      const progress = Math.min(1, Math.max(0, (window.scrollY - start) / distance));
       if (storyTargetProgress.current !== progress) {
         storyTargetProgress.current = progress;
         requestSceneFrames("story", 0);
@@ -42,24 +34,30 @@ export function StoryExperience() {
         setActiveStage(nextStage);
       }
     };
-    const trigger = ScrollTrigger.create({
-      trigger: root.current,
-      start: "top top",
-      end: "bottom bottom",
-      invalidateOnRefresh: true,
-      onRefresh: updateProgress,
-    });
-    const onScroll = () => updateProgress(trigger);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    updateProgress(trigger);
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      trigger.kill();
+    const measure = () => {
+      measureFrame = 0;
+      const bounds = section.getBoundingClientRect();
+      start = bounds.top + window.scrollY;
+      distance = Math.max(1, bounds.height - window.innerHeight);
+      updateProgress();
     };
-  }, { scope: root });
-
-  const switches: SwitchVariant[] = ["linear", "tactile", "silent"];
-  const switchCopy = t.story[switchType];
+    const scheduleMeasure = () => {
+      if (!disposed && !measureFrame) measureFrame = window.requestAnimationFrame(measure);
+    };
+    const observer = new ResizeObserver(scheduleMeasure);
+    observer.observe(section);
+    window.addEventListener("scroll", updateProgress, { passive: true });
+    window.addEventListener("resize", scheduleMeasure, { passive: true });
+    void document.fonts.ready.then(scheduleMeasure);
+    scheduleMeasure();
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      window.cancelAnimationFrame(measureFrame);
+      window.removeEventListener("scroll", updateProgress);
+      window.removeEventListener("resize", scheduleMeasure);
+    };
+  }, []);
 
   return (
     <section ref={root} className="story-experience" aria-label="FORM 75 product story">
@@ -116,30 +114,7 @@ export function StoryExperience() {
         </article>
 
         <article id="switches" className="story-panel align-right switch-panel">
-          <div className="story-copy">
-            <p className="eyebrow">{t.story.switchKicker}</p>
-            <h2>{t.story.switchTitle}</h2>
-            <p>{t.story.switchCopy}</p>
-            <div className="switch-selector" role="group" aria-label={t.config.switches}>
-              {switches.map((variant) => (
-                <button key={variant} type="button" onClick={() => { setSwitchType(variant); requestSceneFrames("story", 260); }} className={switchType === variant ? "active" : ""} aria-pressed={switchType === variant} data-testid={`switch-${variant}`}>
-                  {t.story[variant].name}
-                </button>
-              ))}
-            </div>
-            <div className="switch-readout">
-              <span>{switchCopy.force}</span><span>{switchCopy.feel}</span><span>{t.story.actuation}</span>
-            </div>
-            <button
-              className="press-switch"
-              type="button"
-              onPointerEnter={preloadSwitchClick}
-              onFocus={preloadSwitchClick}
-              {...pressButtonHandlers}
-            >
-              <i />{t.story.press}
-            </button>
-          </div>
+          <SwitchControls />
         </article>
 
         <article className="story-panel align-left reassembly-panel">
@@ -151,5 +126,50 @@ export function StoryExperience() {
         </article>
       </div>
     </section>
+  );
+}
+
+const switches: SwitchVariant[] = ["linear", "tactile", "silent"];
+
+function SwitchControls() {
+  const { dictionary: t } = useLocale();
+  const audioTarget = useRef<HTMLDivElement>(null);
+  const switchType = useConfiguratorStore((state) => state.switchType);
+  const setSwitchType = useConfiguratorStore((state) => state.setSwitchType);
+  const { pressButtonHandlers } = useSwitchPress();
+  const switchCopy = t.story[switchType];
+
+  useEffect(() => {
+    const target = audioTarget.current;
+    if (!target) return;
+    // Decode shortly before the controls arrive, outside the initial page load.
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      preloadSwitchClick();
+      observer.disconnect();
+    }, { rootMargin: "100% 0px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div className="story-copy" ref={audioTarget}>
+      <p className="eyebrow">{t.story.switchKicker}</p>
+      <h2>{t.story.switchTitle}</h2>
+      <p>{t.story.switchCopy}</p>
+      <div className="switch-selector" role="group" aria-label={t.config.switches}>
+        {switches.map((variant) => (
+          <button key={variant} type="button" onClick={() => setSwitchType(variant)} className={switchType === variant ? "active" : ""} aria-pressed={switchType === variant} data-testid={`switch-${variant}`}>
+            {t.story[variant].name}
+          </button>
+        ))}
+      </div>
+      <div className="switch-readout">
+        <span>{switchCopy.force}</span><span>{switchCopy.feel}</span><span>{t.story.actuation}</span>
+      </div>
+      <button className="press-switch" type="button" onPointerEnter={preloadSwitchClick} onFocus={preloadSwitchClick} {...pressButtonHandlers}>
+        <i />{t.story.press}
+      </button>
+    </div>
   );
 }

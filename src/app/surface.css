@@ -1,5 +1,5 @@
 /* Silver #B8B8B5 palette and neutral tinted glass. Motion and section geometry stay in globals.css. */
-:root, .dark {
+:root {
   --bg: #b8b8b5;
   --bg-elevated: #a7a7a3;
   --surface: rgba(40,40,38, .7);

@@ -67,11 +67,11 @@ test("disabled Safari storage does not disable controls", async ({ page }, testI
   });
 
   await page.goto("/");
-  await expect(page.locator("html")).toHaveClass(/light/);
+  await expect(page.locator("html")).not.toHaveClass(/dark|light/);
   await page.getByRole("button", { name: "Сменить язык" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.getByRole("button", { name: "Toggle theme" })).toHaveCount(0);
-  await expect(page.locator("html")).toHaveClass(/light/);
+  await expect(page.locator("html")).not.toHaveClass(/dark|light/);
   await page.getByTestId("assistant-open").click();
   await expect(page.getByTestId("assistant-panel")).toBeVisible();
 
@@ -120,7 +120,6 @@ test("the full mobile configurator surface rotates without scrolling the page", 
   test.skip(testInfo.project.name !== "mobile-chromium", "Chromium CDP supplies a real touch gesture for this regression.");
   await page.goto("/?debug3d=1");
   await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(700);
   await page.locator("#configurator").evaluate((element) => window.scrollTo(0, (element as HTMLElement).offsetTop));
 
   const configurator = page.locator(".canvas-configurator");
@@ -128,6 +127,10 @@ test("the full mobile configurator surface rotates without scrolling the page", 
   test.skip(await configurator.getAttribute("data-webgl") !== "available", "Hardware WebGL2 is unavailable in this browser.");
   const canvas = configurator.locator("canvas");
   await expect(canvas).toBeVisible();
+  await expect(configurator).toHaveAttribute("data-canvas-ready", "true");
+  // Lazy scene creation starts with the browser's 300x150 canvas. Gesture
+  // coordinates must wait for R3F's ResizeObserver to apply the actual surface.
+  await expect.poll(async () => (await canvas.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(540);
   await expect.poll(() => canvas.evaluate((element) => getComputedStyle(element).touchAction)).toBe("none");
 
   const box = await canvas.boundingBox();

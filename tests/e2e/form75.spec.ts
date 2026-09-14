@@ -28,6 +28,8 @@ test.beforeEach(async ({ page }) => {
     }
   });
   await page.goto("/?debug3d=1");
+  // Tests that reload the document must not cancel its in-flight font requests.
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
 });
 
 test.afterEach(async ({ page }) => {
@@ -51,7 +53,8 @@ test("homepage hydrates and navigation anchors work", async ({ page }, testInfo)
 test("locale and localized chat trigger work with the fixed site theme", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.reload();
-  await expect(page.locator("html")).toHaveClass(/light/);
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  await expect(page.locator("html")).not.toHaveClass(/dark|light/);
   await expect(page.getByRole("button", { name: "Переключить тему" })).toHaveCount(0);
   await expect(page.getByTestId("assistant-open")).toHaveAttribute("aria-label", "Открыть FORM AI");
   const language = page.getByRole("button", { name: "Сменить язык" });
@@ -62,7 +65,7 @@ test("locale and localized chat trigger work with the fixed site theme", async (
   await expect(page.getByRole("button", { name: "Toggle theme" })).toHaveCount(0);
   await page.getByRole("button", { name: "Change language" }).click();
   await expect(page.getByText("Точность в каждом нажатии.")).toBeVisible();
-  await expect(page.locator("html")).toHaveClass(/light/);
+  await expect(page.locator("html")).not.toHaveClass(/dark|light/);
 });
 
 test("falls back cleanly when WebGL2 cannot be created", async ({ page }, testInfo) => {
@@ -81,6 +84,10 @@ test("falls back cleanly when WebGL2 cannot be created", async ({ page }, testIn
   await expect(activeStoryRender).toHaveAttribute("data-fallback-stage", "0");
   await expect(activeStoryRender.locator("img")).toHaveJSProperty("complete", true);
   expect(await activeStoryRender.locator("img").evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(300);
+
+  // Finish the initial scroll-restoration / layout frame before issuing a
+  // programmatic scroll; otherwise WebKit can reset that scroll back to zero.
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 
   await page.locator("#inside").evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
   await expect(activeStoryRender).toHaveAttribute("data-fallback-stage", "3");
@@ -422,7 +429,7 @@ test("mobile layout, menu, hit targets and assistant fit", async ({ page }, test
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height);
 });
 
-test("mobile configurator rotates horizontally and preserves vertical touch scrolling", async ({ page }, testInfo) => {
+test("mobile configurator rotates horizontally and page scrolling remains available outside it", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium", "Mobile Chromium exposes the configurator touch-action contract.");
   const configurator = page.locator(".canvas-configurator");
   // On mobile the whole section is taller than the viewport; centering it can
@@ -432,7 +439,7 @@ test("mobile configurator rotates horizontally and preserves vertical touch scro
   test.skip(await configurator.getAttribute("data-webgl") !== "available", "Hardware WebGL2 is unavailable in this browser.");
   const canvas = configurator.locator("canvas");
   await expect(canvas).toBeVisible();
-  await expect.poll(() => canvas.evaluate((element) => getComputedStyle(element).touchAction)).toContain("pan-y");
+  await expect.poll(() => canvas.evaluate((element) => getComputedStyle(element).touchAction)).toBe("none");
   await waitForCanvasSize(configurator);
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
@@ -458,9 +465,14 @@ test("mobile configurator rotates horizontally and preserves vertical touch scro
   expect(Math.abs(Number(await configurator.getAttribute("data-config-rotation")))).toBeGreaterThan(0.5);
   expect(Math.abs(await page.evaluate(() => window.scrollY) - scrollBeforeRotation)).toBeLessThan(2);
 
-  const verticalX = box!.x + box!.width * 0.5;
-  const verticalStart = box!.y + box!.height * 0.72;
-  const verticalEnd = box!.y + box!.height * 0.25;
+  // The canvas spans the full phone width; the controls below it are the
+  // document scrolling surface, not an assumed gutter inside the canvas.
+  await page.locator(".configurator-controls").scrollIntoViewIfNeeded();
+  const viewport = page.viewportSize()!;
+  const verticalX = viewport.width * 0.5;
+  const verticalStart = viewport.height * 0.72;
+  const verticalEnd = viewport.height * 0.3;
+  expect(await page.evaluate(({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest(".canvas-shell")), { x: verticalX, y: verticalStart })).toBe(false);
   const scrollBeforeSwipe = await page.evaluate(() => window.scrollY);
   await dispatchTouch("touchStart", verticalX, verticalStart, 2);
   for (let step = 1; step <= 12; step += 1) {

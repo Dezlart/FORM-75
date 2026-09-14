@@ -22,6 +22,7 @@ import {
   Vector3,
 } from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { keyboardKeys, keycapRowHeight as rowHeight, keycapRowLift as rowLift, keycapRowTilt as rowTilt } from "./keyboardLayout";
 import { KeycapMaterial, RgbLighting, SwitchHousingMaterial } from "./KeyboardRgb";
 import { useConfiguratorStore } from "@/stores/configurator";
@@ -79,19 +80,34 @@ function createKeycapGeometry() {
   }
   positions.needsUpdate = true;
   geometry.computeVertexNormals();
-  return geometry;
+  return indexGeometry(geometry);
 }
 
-const apertureGeometry = new RoundedBoxGeometry(0.4, 0.022, 0.4, 2, 0.035);
-const lowerSwitchGeometry = new RoundedBoxGeometry(0.38, 0.15, 0.38, 2, 0.045);
-const upperSwitchGeometry = new RoundedBoxGeometry(0.32, 0.12, 0.32, 2, 0.035);
+function indexGeometry(geometry: BufferGeometry) {
+  // Reuse identical position/normal/UV tuples. Every triangle and rounded edge
+  // remains intact while instanced keys need far fewer vertex shader executions.
+  const indexed = mergeVertices(geometry, 1e-7);
+  geometry.dispose();
+  return indexed;
+}
+
+const apertureGeometry = indexGeometry(new RoundedBoxGeometry(0.4, 0.022, 0.4, 2, 0.035));
+const lowerSwitchGeometry = indexGeometry(new RoundedBoxGeometry(0.38, 0.15, 0.38, 2, 0.045));
+const upperSwitchGeometry = indexGeometry(new RoundedBoxGeometry(0.32, 0.12, 0.32, 2, 0.035));
 const stemHorizontalGeometry = new RoundedBoxGeometry(0.25, 0.12, 0.1, 2, 0.025);
 const stemVerticalGeometry = new RoundedBoxGeometry(0.1, 0.12, 0.25, 2, 0.025);
+const switchStemGeometry = indexGeometry(mergeGeometries([stemHorizontalGeometry, stemVerticalGeometry])!);
+stemHorizontalGeometry.dispose();
+stemVerticalGeometry.dispose();
 const keycapGeometry = createKeycapGeometry();
 // Layout transforms never change inside a layer. Upload these once; moving the
 // layer during the story then only updates its parent matrix, not every key.
 const switchMatrices = new Float32Array(keyboardKeys.length * 16);
 const keycapMatrices = new Float32Array(keyboardKeys.length * 16);
+const knobRingMatrices = new Float32Array(5 * 16);
+[-0.145, -0.07, 0.005, 0.08, 0.155].forEach((y, index) => {
+  new Matrix4().compose(new Vector3(0, y, 0), new Quaternion().setFromEuler(new Euler(Math.PI / 2, 0, 0)), new Vector3(1, 1, 1)).toArray(knobRingMatrices, index * 16);
+});
 keyboardKeys.forEach((key, index) => {
   new Matrix4().makeTranslation(key.x, 0, key.z).toArray(switchMatrices, index * 16);
   new Matrix4().compose(
@@ -182,7 +198,7 @@ function getLegendResources() {
   return legendResources;
 }
 
-function CaseMaterial({ finish, dark, edge = false }: { finish: CaseFinish; dark: boolean; edge?: boolean }) {
+function CaseMaterial({ finish, edge = false }: { finish: CaseFinish; edge?: boolean }) {
   const profile = caseFinishes[finish];
   const metalness = finish === "silver" ? (edge ? 0.64 : 0.54) : (edge ? 0.76 : 0.68);
   return (
@@ -195,20 +211,20 @@ function CaseMaterial({ finish, dark, edge = false }: { finish: CaseFinish; dark
       clearcoatRoughness={0.38}
       anisotropy={0.2}
       anisotropyRotation={Math.PI / 2}
-      envMapIntensity={dark ? 1.5 : 1.15}
+      envMapIntensity={1.5}
     />
   );
 }
 
-function BottomCase({ groupRef, dark }: { groupRef: React.RefObject<Group | null>; dark: boolean }) {
+function BottomCase({ groupRef }: { groupRef: React.RefObject<Group | null> }) {
   const finish = useConfiguratorStore((state) => state.caseFinish);
   return (
     <group ref={groupRef} position={[0, -0.36, 0]}>
       <RoundedBox args={[10.88, 0.62, 4.62]} radius={0.24} smoothness={5} castShadow receiveShadow>
-        <CaseMaterial finish={finish} dark={dark} />
+        <CaseMaterial finish={finish} />
       </RoundedBox>
       <RoundedBox args={[10.66, 0.13, 4.39]} radius={0.16} smoothness={4} position={[0, 0.33, 0]}>
-        <CaseMaterial finish={finish} dark={dark} edge />
+        <CaseMaterial finish={finish} edge />
       </RoundedBox>
       <RoundedBox args={[10.42, 0.14, 4.12]} radius={0.14} smoothness={4} position={[0, -0.35, 0]} castShadow>
         <meshPhysicalMaterial color="#202223" metalness={0.7} roughness={0.48} roughnessMap={aluminiumRoughness} envMapIntensity={0.8} />
@@ -280,20 +296,19 @@ function Plate({ groupRef }: { groupRef: React.RefObject<Group | null> }) {
   );
 }
 
-function Knob({ finish, dark }: { finish: CaseFinish; dark: boolean }) {
+function Knob({ finish }: { finish: CaseFinish }) {
   const profile = caseFinishes[finish];
   return (
     <group position={[4.66, 0.41, -1.68]}>
       <mesh castShadow>
         <cylinderGeometry args={[0.355, 0.365, 0.4, 64, 2]} />
-        <meshPhysicalMaterial color={finish === "graphite" ? "#aaa9a3" : profile.edge} metalness={0.98} roughness={0.2} roughnessMap={aluminiumRoughness} anisotropy={0.42} envMapIntensity={dark ? 2.2 : 1.75} />
+        <meshPhysicalMaterial color={finish === "graphite" ? "#aaa9a3" : profile.edge} metalness={0.98} roughness={0.2} roughnessMap={aluminiumRoughness} anisotropy={0.42} envMapIntensity={2.2} />
       </mesh>
-      {[-0.145, -0.07, 0.005, 0.08, 0.155].map((y) => (
-        <mesh key={y} position={[0, y, 0]} rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[0.356, 0.008, 5, 64]} />
-          <meshStandardMaterial color="#2c2e2f" metalness={0.9} roughness={0.3} />
-        </mesh>
-      ))}
+      <instancedMesh args={[undefined, undefined, 5]}>
+        <torusGeometry args={[0.356, 0.008, 5, 64]} />
+        <instancedBufferAttribute attach="instanceMatrix" args={[knobRingMatrices, 16]} />
+        <meshStandardMaterial color="#2c2e2f" metalness={0.9} roughness={0.3} />
+      </instancedMesh>
       <mesh position={[0, 0.207, 0]}>
         <cylinderGeometry args={[0.29, 0.34, 0.026, 64]} />
         <meshPhysicalMaterial color="#bab9b3" metalness={0.96} roughness={0.17} envMapIntensity={1.9} />
@@ -306,7 +321,7 @@ function Knob({ finish, dark }: { finish: CaseFinish; dark: boolean }) {
   );
 }
 
-function TopCase({ groupRef, dark }: { groupRef: React.RefObject<Group | null>; dark: boolean }) {
+function TopCase({ groupRef }: { groupRef: React.RefObject<Group | null> }) {
   const finish = useConfiguratorStore((state) => state.caseFinish);
   const rails = [
     { args: [10.88, 0.3, 0.34] as [number, number, number], position: [0, 0.12, -2.14] as [number, number, number] },
@@ -318,21 +333,20 @@ function TopCase({ groupRef, dark }: { groupRef: React.RefObject<Group | null>; 
     <group ref={groupRef} position={[0, 0.25, 0]}>
       {rails.map((rail, index) => (
         <RoundedBox key={index} args={rail.args} position={rail.position} radius={0.13} smoothness={4} castShadow receiveShadow>
-          <CaseMaterial finish={finish} dark={dark} />
+          <CaseMaterial finish={finish} />
         </RoundedBox>
       ))}
       <RoundedBox args={[10.3, 0.045, 3.94]} radius={0.02} smoothness={3} position={[0, -0.015, 0]} receiveShadow>
         <meshPhysicalMaterial color="#1b1d1e" metalness={0.34} roughness={0.56} envMapIntensity={0.7} />
       </RoundedBox>
-      <Knob finish={finish} dark={dark} />
+      <Knob finish={finish} />
     </group>
   );
 }
 
-function SwitchLayer({ groupRef, deckGroup, dark, variant }: {
+function SwitchLayer({ groupRef, deckGroup, variant }: {
   groupRef: React.RefObject<Group | null>;
   deckGroup: React.RefObject<Group | null>;
-  dark: boolean;
   variant: ModelVariant;
 }) {
   const switchType = useConfiguratorStore((state) => state.switchType);
@@ -340,19 +354,17 @@ function SwitchLayer({ groupRef, deckGroup, dark, variant }: {
     <group ref={groupRef} position={[0, 0.47, 0]}>
       <instancedMesh args={[lowerSwitchGeometry, undefined, keyboardKeys.length]} position={[0, -0.035, 0]} castShadow>
         <instancedBufferAttribute attach="instanceMatrix" args={[switchMatrices, 16]} />
-        <SwitchHousingMaterial dark={dark} variant={variant} lower />
+        <SwitchHousingMaterial variant={variant} lower />
       </instancedMesh>
       <instancedMesh args={[upperSwitchGeometry, undefined, keyboardKeys.length]} position={[0, 0.095, 0]} castShadow>
         <instancedBufferAttribute attach="instanceMatrix" args={[switchMatrices, 16]} />
-        <SwitchHousingMaterial dark={dark} variant={variant} />
+        <SwitchHousingMaterial variant={variant} />
       </instancedMesh>
-      {[stemHorizontalGeometry, stemVerticalGeometry].map((geometry, layer) => (
-        <instancedMesh key={layer} args={[geometry, undefined, keyboardKeys.length]} position={[0, 0.1, 0]} castShadow>
+        <instancedMesh args={[switchStemGeometry, undefined, keyboardKeys.length]} position={[0, 0.1, 0]} castShadow>
           <instancedBufferAttribute attach="instanceMatrix" args={[switchMatrices, 16]} />
           <meshStandardMaterial color={switchColors[switchType]} roughness={0.4} />
         </instancedMesh>
-      ))}
-      <RgbLighting dark={dark} variant={variant} deckGroup={deckGroup} switchGroup={groupRef} />
+      <RgbLighting variant={variant} deckGroup={deckGroup} switchGroup={groupRef} />
     </group>
   );
 }
@@ -367,9 +379,8 @@ function LegendLayer({ keycaps }: { keycaps: KeycapVariant }) {
   );
 }
 
-function KeycapLayer({ groupRef, dark, variant }: {
+function KeycapLayer({ groupRef, variant }: {
   groupRef: React.RefObject<Group | null>;
-  dark: boolean;
   variant: ModelVariant;
 }) {
   const keycaps = useConfiguratorStore((state) => state.keycaps);
@@ -378,7 +389,7 @@ function KeycapLayer({ groupRef, dark, variant }: {
       <instancedMesh args={[keycapGeometry, undefined, keyboardKeys.length]} castShadow receiveShadow>
         <instancedBufferAttribute attach="instanceMatrix" args={[keycapMatrices, 16]} />
         <instancedBufferAttribute key={keycaps} attach="instanceColor" args={[keycapInstanceColors[keycaps], 3]} />
-        <KeycapMaterial roughnessMap={pbtRoughness} dark={dark} variant={variant} />
+        <KeycapMaterial roughnessMap={pbtRoughness} variant={variant} />
       </instancedMesh>
       <LegendLayer keycaps={keycaps} />
     </group>
@@ -389,7 +400,7 @@ function positionLayer(group: Group | null, base: number, distance: number, expl
   if (group) group.position.y = base + distance * exploded * motionFactor;
 }
 
-export function KeyboardModel({ variant, dark, mobile }: { variant: ModelVariant; dark: boolean; mobile: boolean }) {
+export function KeyboardModel({ variant, mobile }: { variant: ModelVariant; mobile: boolean }) {
   const root = useRef<Group>(null);
   const bottom = useRef<Group>(null);
   const battery = useRef<Group>(null);
@@ -467,14 +478,14 @@ export function KeyboardModel({ variant, dark, mobile }: { variant: ModelVariant
       scale={variant === "configurator" ? (mobile ? 0.56 : 0.7) : (mobile ? 0.52 : 0.64)}
       dispose={null}
     >
-      <BottomCase groupRef={bottom} dark={dark} />
+      <BottomCase groupRef={bottom} />
       {variant === "story" && <Battery groupRef={battery} />}
       {variant === "story" && <PCB groupRef={pcb} />}
       {variant === "story" && <Dampening groupRef={dampening} />}
       <Plate groupRef={plate} />
-      <TopCase groupRef={topCase} dark={dark} />
-      <SwitchLayer groupRef={switches} deckGroup={topCase} dark={dark} variant={variant} />
-      <KeycapLayer groupRef={keycaps} dark={dark} variant={variant} />
+      <TopCase groupRef={topCase} />
+      <SwitchLayer groupRef={switches} deckGroup={topCase} variant={variant} />
+      <KeycapLayer groupRef={keycaps} variant={variant} />
     </group>
   );
 }

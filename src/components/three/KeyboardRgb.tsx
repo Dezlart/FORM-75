@@ -12,7 +12,6 @@ import { useConfiguratorStore } from "@/stores/configurator";
 import { keyboardKeys } from "./keyboardLayout";
 
 const lightColors = { neutral: "#efd49b", warm: "#ff8842", ice: "#58b8f4" } as const;
-const lightColorsOnLight = { neutral: "#a98543", warm: "#c95520", ice: "#257cae" } as const;
 // Direct light has a pale core; reflected light on the caps carries the hue.
 const sourceColors = { neutral: "#fff0cf", warm: "#ffbc7c", ice: "#a0d9ff" } as const;
 const deckWidth = 10.3;
@@ -46,6 +45,20 @@ function createDeckGlowMap() {
   const width = 512;
   const height = 192;
   const pixels = new Uint8Array(width * height * 4);
+  // The Gaussian is separable: exp(x + z) = exp(x) * exp(z). Precompute
+  // each axis instead of evaluating millions of exponentials on module load.
+  const footprints = keyboardKeys.map((key) => ({
+    x: Float64Array.from({ length: width }, (_, x) => {
+      const deckX = ((x + 0.5) / width - 0.5) * deckWidth;
+      const dx = Math.max(0, Math.abs(deckX - key.x) - key.width * 0.22);
+      return Math.exp(-2.4 * (dx / 0.43) ** 2);
+    }),
+    z: Float64Array.from({ length: height }, (_, y) => {
+      const deckZ = (0.5 - (y + 0.5) / height) * deckDepth;
+      const dz = deckZ - key.z - 0.06;
+      return Math.exp(-2.4 * (dz / 0.46) ** 2);
+    }),
+  }));
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const deckX = ((x + 0.5) / width - 0.5) * deckWidth;
@@ -53,12 +66,10 @@ function createDeckGlowMap() {
       const edgeDistance = Math.min(deckWidth / 2 - Math.abs(deckX), deckDepth / 2 - Math.abs(deckZ));
       const edge = MathUtils.smoothstep(edgeDistance, 0, 0.045);
       let irradiance = 0;
-      for (const key of keyboardKeys) {
+      for (const footprint of footprints) {
         // Overlapping pools spread from beneath each cap. Wider keys illuminate
         // their full underside; unused deck areas do not become a solid sheet.
-        const dx = Math.max(0, Math.abs(deckX - key.x) - key.width * 0.22);
-        const dz = deckZ - key.z - 0.06;
-        irradiance += Math.exp(-2.4 * ((dx / 0.43) ** 2 + (dz / 0.46) ** 2));
+        irradiance += footprint.x[x] * footprint.z[y];
       }
       const offset = (y * width + x) * 4;
       pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 255;
@@ -83,8 +94,7 @@ function lightingIntensity(variant: SceneVariant, enabled: boolean) {
   return enabled ? (variant === "story" ? getStoryLightingIntensity(storyProgress.current) : 1) : 0;
 }
 
-export function RgbLighting({ dark, variant, deckGroup, switchGroup }: {
-  dark: boolean;
+export function RgbLighting({ variant, deckGroup, switchGroup }: {
   variant: SceneVariant;
   deckGroup: RefObject<Group | null>;
   switchGroup: RefObject<Group | null>;
@@ -95,7 +105,7 @@ export function RgbLighting({ dark, variant, deckGroup, switchGroup }: {
   const switchSpill = useRef<MeshBasicMaterial>(null);
   const enabled = useConfiguratorStore((state) => state.backlight);
   const preset = useConfiguratorStore((state) => state.backlightPreset);
-  const color = (dark ? lightColors : lightColorsOnLight)[preset];
+  const color = lightColors[preset];
 
   useFrame(() => {
     const intensity = lightingIntensity(variant, enabled);
@@ -108,28 +118,28 @@ export function RgbLighting({ dark, variant, deckGroup, switchGroup }: {
     const separated = MathUtils.smoothstep(separation, 0.06, 0.42);
     if (root.current) root.current.visible = intensity > 0.001;
     if (deck.current) deck.current.position.y = deckY - switchY;
-    if (deckGlow.current) deckGlow.current.opacity = (dark ? 0.92 : 0.58) * intensity * (1 - separated * 0.35);
+    if (deckGlow.current) deckGlow.current.opacity = 0.92 * intensity * (1 - separated * 0.35);
     // Per-switch spill only becomes legible when the switch layer separates.
     // In the assembled board it cannot resolve into a row of bright dots.
-    if (switchSpill.current) switchSpill.current.opacity = (dark ? 0.22 : 0.17) * intensity * MathUtils.lerp(0.025, 1, separated);
+    if (switchSpill.current) switchSpill.current.opacity = 0.22 * intensity * MathUtils.lerp(0.025, 1, separated);
   });
 
   return (
     <group ref={root} visible={enabled}>
       <group ref={deck} position={[0, -0.2095, 0]}>
         <mesh geometry={deckGlowGeometry} rotation={[-Math.PI / 2, 0, 0]}>
-          <meshBasicMaterial ref={deckGlow} map={deckGlowMap} color={sourceColors[preset]} transparent opacity={dark ? 0.92 : 0.58} blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
+          <meshBasicMaterial ref={deckGlow} map={deckGlowMap} color={sourceColors[preset]} transparent opacity={0.92} blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
         </mesh>
       </group>
       <instancedMesh args={[switchSpillGeometry, undefined, keyboardKeys.length]}>
         <instancedBufferAttribute attach="instanceMatrix" args={[switchSpillMatrices, 16]} />
-        <meshBasicMaterial ref={switchSpill} map={spillMap} color={color} transparent opacity={dark ? 0.24 : 0.2} blending={AdditiveBlending} depthWrite={false} toneMapped={false} side={DoubleSide} />
+        <meshBasicMaterial ref={switchSpill} map={spillMap} color={color} transparent opacity={0.24} blending={AdditiveBlending} depthWrite={false} toneMapped={false} side={DoubleSide} />
       </instancedMesh>
     </group>
   );
 }
 
-export function KeycapMaterial({ roughnessMap, dark, variant }: { roughnessMap: Texture; dark: boolean; variant: SceneVariant }) {
+export function KeycapMaterial({ roughnessMap, variant }: { roughnessMap: Texture; variant: SceneVariant }) {
   const enabled = useConfiguratorStore((state) => state.backlight);
   const preset = useConfiguratorStore((state) => state.backlightPreset);
   const keycaps = useConfiguratorStore((state) => state.keycaps);
@@ -139,8 +149,8 @@ export function KeycapMaterial({ roughnessMap, dark, variant }: { roughnessMap: 
     rgbMaterialResponse: { value: keycaps === "porcelain" ? 0 : 1 },
   });
   useFrame(() => {
-    uniforms.current.rgbColor.value.set((dark ? lightColors : lightColorsOnLight)[preset]);
-    uniforms.current.rgbPower.value = lightingIntensity(variant, enabled) * (dark ? 0.48 : 0.3);
+    uniforms.current.rgbColor.value.set(lightColors[preset]);
+    uniforms.current.rgbPower.value = lightingIntensity(variant, enabled) * 0.48;
     uniforms.current.rgbMaterialResponse.value = keycaps === "porcelain" ? 0 : 1;
   });
   return (
@@ -170,13 +180,13 @@ export function KeycapMaterial({ roughnessMap, dark, variant }: { roughnessMap: 
   );
 }
 
-export function SwitchHousingMaterial({ dark, variant, lower = false }: { dark: boolean; variant: SceneVariant; lower?: boolean }) {
+export function SwitchHousingMaterial({ variant, lower = false }: { variant: SceneVariant; lower?: boolean }) {
   const enabled = useConfiguratorStore((state) => state.backlight);
   const preset = useConfiguratorStore((state) => state.backlightPreset);
   const uniforms = useRef({ rgbColor: { value: new Color(lightColors[preset]) }, rgbPower: { value: 0 }, ledY: { value: lower ? 0.01 : -0.12 } });
   useFrame(() => {
-    uniforms.current.rgbColor.value.set((dark ? lightColors : lightColorsOnLight)[preset]);
-    uniforms.current.rgbPower.value = lightingIntensity(variant, enabled) * (dark ? (lower ? 0.42 : 0.68) : (lower ? 0.28 : 0.44));
+    uniforms.current.rgbColor.value.set(lightColors[preset]);
+    uniforms.current.rgbPower.value = lightingIntensity(variant, enabled) * (lower ? 0.42 : 0.68);
   });
   return (
     <meshStandardMaterial
