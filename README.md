@@ -49,7 +49,9 @@ Russian is the initial language. Both complete dictionaries live in `src/i18n`, 
 
 ## Responsive behavior
 
-The 3D canvas uses hardware antialiasing and adaptive DPR of 1–1.5 on mobile, capped by the device pixel ratio. It never renders below one pixel per CSS pixel. Responsive FOV, shared studio reflections, touch controls, mobile story composition, compact navigation, and the viewport-contained assistant bottom sheet are preserved. The complete configurator surface rotates the model; page scrolling remains available outside it.
+The 3D canvas starts at DPR 1 on mobile and can adapt up to 1.5 when sustained animation has headroom, capped by the device pixel ratio. It never renders below one pixel per CSS pixel. Responsive FOV, shared studio reflections, touch controls, mobile story composition, compact navigation, and the viewport-contained assistant bottom sheet are preserved. The complete configurator surface rotates the model; page scrolling remains available outside it.
+
+Cold-load delivery uses Next.js `inlineCss` (experimental, production only) for this single-page site's small stylesheet. The local Latin and Cyrillic Inter subsets are preloaded; `font-display: optional` keeps a slow font from shifting already-visible text. GPU detection waits until page load and an idle opportunity after two paint frames. The configurator waits until it approaches the viewport. Scene shaders use Three.js `compileAsync` before the first draw, retaining the preview until that draw completes; browsers without parallel shader compilation use Three.js's compatibility path. First-load audits should cover both hardware WebGL and the static fallback: a high Lighthouse score for the fallback does not measure shader startup. Next.js/React runtime coverage and framework polyfill warnings can remain; do not patch framework internals to suppress them.
 
 ## Getting started
 
@@ -82,7 +84,7 @@ The build prerenders the homepage and packages a Node.js standalone server. `pos
 
 Terminate HTTPS at the hosting platform or reverse proxy. That proxy must replace untrusted `X-Forwarded-For` / `X-Real-IP` headers with the actual client address; the API uses those headers for rate limiting. The built-in limiter is per process: if running multiple instances, enforce a shared limit at the hosting gateway. No database is required by the application.
 
-Hashed Next.js bundles use the framework's cache policy. Public product images and audio are cached for one day with background revalidation; purge the CDN if replacing these files and immediate propagation is required. Browser source maps, test reports, browser downloads, local environment files and historical QA artifacts are not part of the runtime deployment. Postbuild removes environment files copied by Next.js; the original local files stay in the project directory.
+Hashed Next.js bundles and the statically imported desktop/mobile hero previews use the framework's immutable cache policy. Regenerating either hero changes its content-hashed URL automatically. Other public product images and audio are cached for one day with background revalidation; purge the CDN if replacing these files and immediate propagation is required. Browser source maps, test reports, browser downloads, local environment files and historical QA artifacts are not part of the runtime deployment. Postbuild removes environment files copied by Next.js; the original local files stay in the project directory.
 
 ## Docker
 

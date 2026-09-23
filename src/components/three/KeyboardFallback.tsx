@@ -1,13 +1,19 @@
 "use client";
 
 import { useConfiguratorStore } from "@/stores/configurator";
+import heroDesktop from "../../../public/images/keyboard-fallbacks/story-desktop-0.webp";
+import heroMobile from "../../../public/images/keyboard-fallbacks/story-mobile-0.webp";
 
 function StaticRender({ desktopFile, mobileFile, priority = false }: { desktopFile: string; mobileFile: string; priority?: boolean }) {
+  // Static imports give the LCP images content-hashed URLs and an immutable
+  // cache without serving stale artwork when the renders are regenerated.
+  const desktopSrc = desktopFile === "story-desktop-0" ? heroDesktop.src : `/images/keyboard-fallbacks/${desktopFile}.webp`;
+  const mobileSrc = mobileFile === "story-mobile-0" ? heroMobile.src : `/images/keyboard-fallbacks/${mobileFile}.webp`;
   return (
     <picture className="fallback-render">
-      <source media="(max-width: 760px)" srcSet={`/images/keyboard-fallbacks/${mobileFile}.webp`} />
+      <source media="(max-width: 760px)" srcSet={mobileSrc} />
       <img
-        src={`/images/keyboard-fallbacks/${desktopFile}.webp`}
+        src={desktopSrc}
         alt=""
         aria-hidden="true"
         draggable={false}

@@ -1,6 +1,47 @@
 import { expect, test } from "@playwright/test";
 import { expectCleanRuntime, monitorRuntime } from "./runtimeDiagnostics";
 
+test("critical fonts are preloaded and the hero has an immutable content-hashed URL", async ({ page, request }) => {
+  await page.goto("/");
+  await expect(page.locator('link[rel="preload"][as="font"]')).toHaveCount(2);
+  await expect(page.locator('link[rel="stylesheet"]')).toHaveCount(0);
+  // Read SSR markup so this also covers a fast GPU removing the preview.
+  const html = await request.get("/");
+  const match = (await html.text()).match(/\/_next\/static\/media\/story-mobile-0\.[\w-]+\.webp/);
+  expect(match).not.toBeNull();
+  const image = await request.get(match![0]);
+  expect(image.ok()).toBe(true);
+  expect(image.headers()["cache-control"]).toContain("max-age=31536000");
+  expect(image.headers()["cache-control"]).toContain("immutable");
+});
+
+test("a slow hero download does not start the GPU or prevent navigation controls", async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...args: unknown[]) {
+      if (type === "webgl2") document.documentElement.dataset.gpuProbes = String(Number(document.documentElement.dataset.gpuProbes ?? 0) + 1);
+      return original.call(this, type, ...args as []);
+    } as typeof original;
+  });
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => { release = resolve; });
+  await page.route(/story-(mobile|desktop)-0.*\.webp$/, async (route) => {
+    await waiting;
+    await route.continue();
+  });
+  try {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Сменить язык" }).click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page.locator(".canvas-story")).toHaveAttribute("data-webgl", "checking");
+    expect(await page.locator("html").getAttribute("data-gpu-probes")).toBeNull();
+  } finally {
+    release();
+  }
+  await expect(page.locator(".canvas-story")).not.toHaveAttribute("data-webgl", "checking");
+  await expect(page.locator(".canvas-configurator")).toHaveAttribute("data-webgl", "checking");
+});
+
 test("initial loading leaves offscreen sound and hidden fallback stages deferred", async ({ page }) => {
   const diagnostics = monitorRuntime(page);
   const assets: string[] = [];

@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   devIndicators: false,
   poweredByHeader: false,
+  // This single-page showcase has a small stylesheet. Ship it with the HTML
+  // so a cold mobile visit does not wait for another render-blocking request.
+  experimental: { inlineCss: true },
   async headers() {
     return [
       {

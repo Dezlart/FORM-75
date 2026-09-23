@@ -12,7 +12,9 @@ import { SwitchModel } from "./SwitchModel";
 import { advanceStoryMotion, getStorySwitchStage, isSceneDebugEnabled, registerSceneInvalidator, storyProgress, storyTargetProgress, smoothstep } from "@/lib/storyProgress";
 
 type CanvasVariant = "story" | "configurator";
-const mobileDpr: [number, number] = [1, 1.5];
+// Start at CSS resolution; AdaptiveQuality can raise it once real animation
+// proves the device has headroom instead of overloading its first frame.
+const mobileDpr = 1;
 const desktopDpr: [number, number] = [1, 1.2];
 
 function ResponsiveCamera({ mobile, variant }: { mobile: boolean; variant: CanvasVariant }) {
@@ -261,7 +263,7 @@ function PerformanceProbe() {
     }
     elapsed.current = 0;
     frames.current = 0;
-  });
+  }, 2); // Read counters after PreparedRenderer's actual draw at priority 1.
   return null;
 }
 
@@ -353,15 +355,41 @@ function RenderScheduler({ active, variant }: { active: boolean; variant: Canvas
   return null;
 }
 
-function FirstFrameReporter({ onReady }: { onReady: () => void }) {
+function PreparedRenderer({ onReady, onFailure }: { onReady: () => void; onFailure: () => void }) {
+  const { gl, scene, camera, invalidate } = useThree();
+  const compilation = useRef<"pending" | "compiling" | "ready" | "failed">("pending");
+  const mounted = useRef(true);
   const reported = useRef(false);
   const animationFrame = useRef(0);
-  useEffect(() => () => window.cancelAnimationFrame(animationFrame.current), []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      window.cancelAnimationFrame(animationFrame.current);
+    };
+  }, []);
   useFrame(() => {
+    // Run after lighting/environment setup and every pose subscriber. Owning
+    // the final render prevents a synchronous first draw from waiting on GPU
+    // shader compilation; keep the preview visible until an actual draw.
+    if (compilation.current === "pending") {
+      compilation.current = "compiling";
+      void gl.compileAsync(scene, camera).then(() => {
+        if (!mounted.current) return;
+        compilation.current = "ready";
+        invalidate();
+      }).catch(() => {
+        if (!mounted.current) return;
+        compilation.current = "failed";
+        onFailure();
+      });
+    }
+    if (compilation.current !== "ready") return;
+    gl.render(scene, camera);
     if (reported.current) return;
     reported.current = true;
     animationFrame.current = window.requestAnimationFrame(onReady);
-  });
+  }, 1);
   return null;
 }
 
@@ -405,7 +433,7 @@ const StudioLighting = memo(function StudioLighting({ story, mobile }: { story: 
   );
 });
 
-function Scene({ variant, active, mobile, onReady, onDprChange }: { variant: CanvasVariant; active: boolean; mobile: boolean; onReady: () => void; onDprChange: (dpr: number) => void }) {
+function Scene({ variant, active, mobile, onReady, onFailure, onDprChange }: { variant: CanvasVariant; active: boolean; mobile: boolean; onReady: () => void; onFailure: () => void; onDprChange: (dpr: number) => void }) {
   return (
     <>
       <fog attach="fog" args={["#b8b8b5", 21, 34]} />
@@ -414,7 +442,7 @@ function Scene({ variant, active, mobile, onReady, onDprChange }: { variant: Can
       {variant === "story" && <StoryProgressController />}
       {isSceneDebugEnabled() && <PerformanceProbe />}
       <RenderScheduler active={active} variant={variant} />
-      <FirstFrameReporter onReady={onReady} />
+      <PreparedRenderer onReady={onReady} onFailure={onFailure} />
       <StudioLighting story={variant === "story"} mobile={mobile} />
       <KeyboardModel variant={variant} mobile={mobile} />
       {variant === "story" && <><SwitchModel mobile={mobile} /><StoryCamera mobile={mobile} /></>}
@@ -455,7 +483,7 @@ export const KeyboardSceneRenderer = memo(function KeyboardSceneRenderer({ varia
         }, { once: true });
       }}
     >
-      <Scene variant={variant} active={active} mobile={mobile} onReady={onReady} onDprChange={rememberDpr} />
+      <Scene variant={variant} active={active} mobile={mobile} onReady={onReady} onFailure={onFailure} onDprChange={rememberDpr} />
     </Canvas>
   );
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { Component, memo, useCallback, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, memo, startTransition, useCallback, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { KeyboardFallback } from "./KeyboardFallback";
 import { useLocale } from "@/components/providers/LocaleProvider";
 
@@ -79,9 +79,33 @@ export const KeyboardCanvas = memo(function KeyboardCanvas({ variant, label, fal
     return () => window.clearTimeout(timeout);
   }, [canvasReady]);
   useEffect(() => {
-    const timeout = window.setTimeout(() => setWebGLState(supportsWebGL2() ? "available" : "unavailable"), 0);
-    return () => window.clearTimeout(timeout);
-  }, []);
+    if (!activated || !foreground || webGLState !== "checking") return;
+    let frame = 0;
+    let idle = 0;
+    let timeout = 0;
+    const check = () => {
+      const supported = supportsWebGL2();
+      startTransition(() => setWebGLState(supported ? "available" : "unavailable"));
+    };
+    const schedule = () => {
+      // Let the HTML, fonts and preview paint before probing the GPU or loading
+      // Three.js. Offscreen configurators never probe during initial loading.
+      frame = window.requestAnimationFrame(() => {
+        frame = window.requestAnimationFrame(() => {
+          if (typeof window.requestIdleCallback === "function") idle = window.requestIdleCallback(check, { timeout: 1500 });
+          else timeout = window.setTimeout(check, 0);
+        });
+      });
+    };
+    if (document.readyState === "complete") schedule();
+    else window.addEventListener("load", schedule, { once: true });
+    return () => {
+      window.removeEventListener("load", schedule);
+      window.cancelAnimationFrame(frame);
+      if (idle) window.cancelIdleCallback(idle);
+      window.clearTimeout(timeout);
+    };
+  }, [activated, foreground, webGLState]);
   useEffect(() => {
     const update = () => setForeground(!document.hidden);
     document.addEventListener("visibilitychange", update);

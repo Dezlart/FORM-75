@@ -91,8 +91,10 @@ test("falls back cleanly when WebGL2 cannot be created", async ({ page }, testIn
 
   await page.locator("#inside").evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
   await expect(activeStoryRender).toHaveAttribute("data-fallback-stage", "3");
+  await expect(activeStoryRender.locator("img")).toHaveJSProperty("complete", true);
   await page.locator("#switches").evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
   await expect(activeStoryRender).toHaveAttribute("data-fallback-stage", "4");
+  await expect(activeStoryRender.locator("img")).toHaveJSProperty("complete", true);
 
   await page.locator("#configurator").evaluate((element) => element.scrollIntoView({ block: "start", behavior: "instant" }));
   const configuratorRender = page.locator(".canvas-configurator .fallback-stage.is-active img");
